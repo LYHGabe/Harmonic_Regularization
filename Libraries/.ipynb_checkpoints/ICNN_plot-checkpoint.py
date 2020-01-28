@@ -149,38 +149,6 @@ class ICNN_plot():
                 a = V_current.clone()
                 self.V_total[i,j] = a
                 
-    def plot_f(self,filename, density, widthscale, widthbase, quiver = False, streamplot = True):
-
-        self.cal_f()
-
-        pi = math.pi
-        plt.rcParams["figure.figsize"] = (12.3,10)
-        plt.axis([0, pi, 0, pi])
-        widths = 0.001
-        #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
-        plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
-        fnumpy = self.f_total.detach()
-        U = fnumpy[:,:,0].t().numpy()
-        V = fnumpy[:,:,1].t().numpy()
-        
-        #f streamline
-        if(quiver):
-            plt.quiver(self.q1_mesh,self.q2_mesh,self.f_total[:,:,0].detach(),self.f_total[:,:,1].detach(),color = 'r',width=0.002)
-        if(streamplot):
-            #print(np.sqrt(U*U+V*V))
-            #print(np.ones([self.nq1,self.nq2]))
-            width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
-            #width[width>10] = 10
-            #print(width)
-            color = self.f_grad_total.detach().t().numpy()
-            #print(color)
-            strm = plt.streamplot(self.q1_mesh.t().numpy(),self.q2_mesh.t().numpy(),fnumpy[:,:,0].t().numpy(),fnumpy[:,:,1].t().numpy(),
-                           density = density,color = color,linewidth = width, cmap='autumn')
-            plt.colorbar(strm.lines)
-
-        plt.savefig(filename,dpi = 500)
-    
-    
     def cal_ftask(self):
         xlong = self.xmesh.view(-1,2).to(device_c)
         x1 = xlong[:,0]
@@ -254,6 +222,44 @@ class ICNN_plot():
         #print(self.ftask)
         #print(f_task)
         
+                
+    def plot_f(self,filename, density, widthscale, widthbase, quiver = False, streamplot = True, cmax = 0):
+
+        self.cal_f()
+
+        pi = math.pi
+        plt.rcParams["figure.figsize"] = (12.3,10)
+        plt.axis([0, pi, 0, pi])
+        widths = 0.001
+        #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
+        plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
+        fnumpy = self.f_total.detach()
+        U = fnumpy[:,:,0].t().numpy()
+        V = fnumpy[:,:,1].t().numpy()
+        
+        #f streamline
+        if(quiver):
+            plt.quiver(self.q1_mesh,self.q2_mesh,self.f_total[:,:,0].detach(),self.f_total[:,:,1].detach(),color = 'r',width=0.002)
+        if(streamplot):
+            #print(np.sqrt(U*U+V*V))
+            #print(np.ones([self.nq1,self.nq2]))
+            width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
+            #width[width>10] = 10
+            #print(width)
+            color = self.f_grad_total.detach().t().numpy()
+            #print(color)
+            strm = plt.streamplot(self.q1_mesh.t().numpy(),self.q2_mesh.t().numpy(),fnumpy[:,:,0].t().numpy(),fnumpy[:,:,1].t().numpy(),
+                           density = density,color = color,linewidth = width, cmap='autumn')
+            plt.colorbar(strm.lines)
+            if(cmax):
+                plt.clim(0,cmax)
+            
+
+        plt.savefig(filename,dpi = 500)
+    
+    
+    
+        
         
     def plot_fhat(self,filename, density, quiver = False, streamplot = True):
         pi = math.pi
@@ -269,9 +275,11 @@ class ICNN_plot():
         V2 = fhnumpy[:,:,1].t().numpy()
         
         if(quiver):
-            plt.quiver(self.q1_mesh,self.q2_mesh,self.fh_total[:,:,0].detach(),self.fh_total[:,:,1].detach(),color = 'b',width=0.0015)
+            plt.quiver(self.q1_mesh,self.q2_mesh,self.fh_total[:,:,0].detach(),
+                       self.fh_total[:,:,1].detach(),color = 'b',width=0.0015)
         if(streamplot):
-            plt.streamplot(self.q1_mesh.t().numpy(),self.q2_mesh.t().numpy(),fhnumpy[:,:,0].t().numpy(),fhnumpy[:,:,1].t().numpy(),
+            plt.streamplot(self.q1_mesh.t().numpy(),self.q2_mesh.t().numpy(),
+                           fhnumpy[:,:,0].t().numpy(),fhnumpy[:,:,1].t().numpy(),
                            density = density,color = np.sqrt(U2*U2+V2*V2))
         
         plt.savefig(filename,dpi = 500)
@@ -295,7 +303,7 @@ class ICNN_plot():
 
 
         
-    def plot_f_taskspace(self,filename, robot, density, widthscale, widthbase, quiver = False, streamplot = True):
+    def plot_f_taskspace(self,filename, robot, density, widthscale, widthbase, quiver = False, streamplot = True, cmax = 0):
 
         l1 = robot.l1
         l2 = robot.l2
@@ -363,6 +371,9 @@ class ICNN_plot():
             strm = plt.streamplot(self.x1_mesh.t().numpy(), self.x2_mesh.t().numpy(), np.transpose(U), np.transpose(V), density = density ,color =color,linewidth = width,
                                   cmap='autumn')
             plt.colorbar(strm.lines)
+            if(cmax):
+                plt.clim(0,cmax)
+                
         plt.show()
         plt.savefig(filename,dpi = 500)
        
