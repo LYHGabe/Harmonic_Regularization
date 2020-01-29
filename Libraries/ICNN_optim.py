@@ -45,6 +45,8 @@ class ICNN_optim:
     def get_grid(self,nq1,nq2,qmin,qmax):
         self.nq1 = nq1
         self.nq2 = nq2
+        self.qmin = qmin
+        self.qmax = qmax
         q_in_mesh = torch.zeros((nq1,nq2,2), device=self.device, dtype=dtype)
         q1_0 = (qmax[0]-qmin[0])/(2*nq1)+qmin[0]
         q2_0 = (qmax[1]-qmin[1])/(2*nq2)+qmin[1]
@@ -271,6 +273,12 @@ class ICNN_optim:
     def optim_Kinematic_reg(self, robot, q_in_reg, qtraj, q_dot, dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
                       batch_size = 400):
         
+        
+        
+        q_in_small,aa,bb = self.get_grid(10,10,self.qmin,self.qmax)
+        q_in_small = q_in_small.to(self.device)
+        q_in_small.requires_grad = True
+        
         dataset = Grid_dataset(q_in_reg.numpy())
         train_loader = DataLoader(dataset=dataset,
                                           batch_size=batch_size,
@@ -354,10 +362,12 @@ class ICNN_optim:
                 current_grid_data.grad.zero_()
                 ld = loss.data.clone().to(device_c)
                 #loss_mat[t] = loss.data
+                ###############################################    ##########################              #########################
                 if i%10==0:
                     
-                    total_grid = q_in_reg.to(self.device)
-                    total_grid.requires_grad=True
+                    #total_grid = q_in_small.to(self.device)
+                    #total_grid.requires_grad=True
+                    total_grid = q_in_small
                     current_output = self.model.f_forward(total_grid,self.Xstable).to(self.device)
                     current_output = current_output.t()
                     co1 = torch.sum(current_output[:,0])
@@ -434,6 +444,10 @@ class ICNN_optim:
         
     def optim_Kinetic_reg(self, robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
                       batch_size = 400):
+        
+        q_in_small,aa,bb = self.get_grid(10,10,self.qmin,self.qmax)
+        q_in_small = q_in_small.to(self.device)
+        q_in_small.requires_grad = True
         
         dataset = Grid_dataset(q_in_reg.numpy())
         train_loader = DataLoader(dataset=dataset,
@@ -521,21 +535,64 @@ class ICNN_optim:
                 current_grid_data.grad.zero_()
                 ld = loss.data.clone().to(device_c)
                 #loss_mat[t] = loss.data
-                
+                ##################################################################################
                 if i%10==0:
-                    total_grid = q_in_reg.to(self.device)
-                    total_grid.requires_grad=True
+                    total_grid = q_in_small
                     current_output = self.model.f_forward(total_grid,self.Xstable).to(self.device)
-
+                    current_output = current_output.t()
                     co1 = torch.sum(current_output[:,0])
                     co2 = torch.sum(current_output[:,1])
-
                     qdot_grad1 = grad(co1,total_grid,create_graph=True,retain_graph=True)[0]
                     qdot_grad2 = grad(co2,total_grid,create_graph=True,retain_graph=True)[0]
+                    qdot_grad_together = torch.zeros(2,2,total_grid.shape[0]).to(self.device)
+                    qdot_grad_together[:,0,:] = qdot_grad1.t()
+                    qdot_grad_together[:,1,:] = qdot_grad2.t()
+                    
+                    num_sampled_batch = total_grid.shape[0]
+                    Matrix_del_f = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
+                    Matrix_Gamma = torch.zeros(2*num_sampled_batch,2*num_sampled_batch,2*num_sampled_batch).to(self.device)
+                    Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
+                    Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
+                    Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
+                    
+                    for k in range(num_sampled_batch):
+                        Temp1 = robot.get_Christoffel_kinetic(total_grid[k,:])
+                        Temp2 = robot.get_Kinetic_Riemannian_metric(total_grid[k,:])
 
-                    qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
-                    total_loss_reg = torch.sum(qdot_grad_norm)*self.dA/2
+                        Matrix_del_f[2*k:2*(k+1),2*k:2*(k+1)] = qdot_grad_together[:,:,k]
+                        Gamma = torch.zeros(2,2,2)
+                        Gamma[:,:,0] = Temp1[0].detach().to(self.device)
+                        Gamma[:,:,1] = Temp1[1].detach().to(self.device)
+                        Matrix_Gamma[2*k:2*(k+1),2*k:2*(k+1),2*k:2*(k+1)] = Gamma
+                        Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
+                        Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
+                        Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
+                    ######################################
+                    cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
+                    #print(cov_der)
+                    Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
+                    total_loss_reg = Integral_approximation*self.dA/2*(self.nq1*self.nq2/batch_size)
                     total_loss = (total_loss_reg+penalty*(F.relu(loss_task-eps)**2)+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
+                    
+                    
+                    
+                    
+                    
+                    
+                    
+                    #total_grid = q_in_reg.to(self.device)
+                    #total_grid.requires_grad=True
+                    #current_output = self.model.f_forward(total_grid,self.Xstable).to(self.device)
+                    
+                    #co1 = torch.sum(current_output[:,0])
+                    #co2 = torch.sum(current_output[:,1])
+                    
+                    #qdot_grad1 = grad(co1,total_grid,create_graph=True,retain_graph=True)[0]
+                    #qdot_grad2 = grad(co2,total_grid,create_graph=True,retain_graph=True)[0]
+                    
+                    #qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
+                    #total_loss_reg = torch.sum(qdot_grad_norm)*self.dA/2
+                    #total_loss = (total_loss_reg+penalty*(F.relu(loss_task-eps)**2)+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                     
                 print ('\r epoch = '+str(t) +' i = '+str(i+1)+ 
                        ', loss = ' +str(ld.data.numpy())+
