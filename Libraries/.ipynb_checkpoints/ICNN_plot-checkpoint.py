@@ -16,8 +16,9 @@ device_c = torch.device("cpu")
 device = torch.device("cuda:0")
 
 class ICNN_plot():
-    def __init__(self, model,qmin,qmax,nq1,nq2,xmin,xmax,nx1,nx2,Xstable,qtraj,l1,l2):
+    def __init__(self, model,qmin,qmax,nq1,nq2,xmin,xmax,nx1,nx2,Xstable,qtraj,l1,l2,device):
         #이병호 추가: 플롯 가로세로 한것들
+        self.device = device
         self.fswitch = 1
         self.nq1 = nq1
         self.nq2 = nq2
@@ -43,17 +44,17 @@ class ICNN_plot():
         self.x1 = torch.linspace(self.x1_0,self.x1_f,nx1)
         self.x2 = torch.linspace(self.x2_0,self.x2_f,nx2)
         self.x1_mesh,self.x2_mesh = torch.meshgrid(self.x1,self.x2)
-        self.xmesh = torch.zeros((nx1,nx2,2), device=device, dtype=dtype)
+        self.xmesh = torch.zeros((nx1,nx2,2), device=self.device, dtype=dtype)
         self.xmesh[:,:,0] = self.x1_mesh
         self.xmesh[:,:,1] = self.x2_mesh
         
         
         self.Xstable = Xstable
-        self.f_total = torch.zeros((nq2, nq1,2), device=torch.device("cpu"), dtype=dtype)
-        self.f_grad_total = torch.zeros((nq2, nq1), device=torch.device("cpu"), dtype=dtype)
-        self.fh_total = torch.zeros((nq2, nq1,2), device=torch.device("cpu"), dtype=dtype)
-        self.V_total = torch.zeros((nq2, nq1), device=torch.device("cpu"), dtype=dtype)
-        #self.Vgrad_total = torch.zeros((nq2, nq1,2), device=torch.device("cpu"), dtype=dtype)
+        #self.f_total = torch.zeros((nq2, nq1,2), device=device_c, dtype=dtype)
+        #self.f_grad_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
+        self.fh_total = torch.zeros((nq2, nq1,2), device=device_c, dtype=dtype)
+        self.V_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
+        #self.Vgrad_total = torch.zeros((nq2, nq1,2), device=device_c, dtype=dtype)
         self.model = model
         
         self.qmesh = self.get_mesh(nq1,nq2,qmin,qmax)
@@ -61,7 +62,7 @@ class ICNN_plot():
         self.l2 = l2
         
     def get_mesh(self,nq1,nq2,qmin,qmax):  #중복되니까 삭제하자
-        q_in_mesh = torch.zeros((nq1,nq2,2), device=device, dtype=dtype)
+        q_in_mesh = torch.zeros((nq1,nq2,2), device=self.device, dtype=dtype)
         q1_0 = (qmax[0]-qmin[0])/(2*nq1)+qmin[0]
         q2_0 = (qmax[1]-qmin[1])/(2*nq2)+qmin[1]
         q1_f = qmax[0] - (qmax[0]-qmin[0])/(2*nq1)
@@ -73,40 +74,23 @@ class ICNN_plot():
         q_in_mesh[:,:,1] = q2_mesh
         #q_in_reg = q_in_mesh.view(-1,2).to(device_c)
         #qmesh2 = q_in_reg.view(nq1,nq2,2)
-        #print(torch.sum(q_in_mesh-qmesh2.to(device)))
+        #print(torch.sum(q_in_mesh-qmesh2.to(self.device)))
         return q_in_mesh
     
     
     def cal_f(self):
-        Xlong = self.qmesh.view(-1,2).to(device)
+        Xlong = self.qmesh.view(-1,2).to(self.device)
         Xlong.requires_grad=True
         ftotal_long = self.model.f_forward(Xlong, self.Xstable)
-        self.f_total = ftotal_long.view(self.nq1,self.nq2,2).to(device_c).detach()
+        f_total = ftotal_long.view(self.nq1,self.nq2,2).to(device_c).detach()
         co1 = torch.sum(ftotal_long[:,0])
         co2 = torch.sum(ftotal_long[:,1])
         qdot_grad1 = grad(co1,Xlong,create_graph=True,retain_graph=True)[0]
         qdot_grad2 = grad(co2,Xlong,create_graph=True,retain_graph=True)[0]
         qdot_grad_norm1 = torch.sqrt((qdot_grad1**2)[:,0]+(qdot_grad1**2)[:,1]+(qdot_grad2**2)[:,0]+(qdot_grad2**2)[:,1])
-        self.f_grad_total = qdot_grad_norm1.view(self.nq1,self.nq2).to(device_c).detach()
-        #print(qdot_grad_norm1.view(self.nq1,self.nq2))
+        f_grad_total = qdot_grad_norm1.view(self.nq1,self.nq2).to(device_c).detach()
         
-        #for i in range(self.nq1):
-        #    #X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=device, dtype=dtype, requires_grad=True)
-        #    
-        #    for j in range(self.nq2):
-        #        X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=device, dtype=dtype, requires_grad=True)
-        #        f_current = self.model.f_forward(X, self.Xstable)
-        #        self.f_total[i,j,:] = f_current
-        #        
-        #        co1 = f_current[0,0]
-        #        co2 = f_current[0,1]
-        #        qdot_grad1 = grad(co1,X,create_graph=True,retain_graph=True)[0]
-        #        qdot_grad2 = grad(co2,X,create_graph=True,retain_graph=True)[0]
-        #        qdot_grad_norm = torch.sqrt((qdot_grad1**2)[:,0]+(qdot_grad1**2)[:,1]+(qdot_grad2**2)[:,0]+(qdot_grad2**2)[:,1])
-        #        color_current = torch.sum(qdot_grad_norm)
-        #        self.f_grad_total[i,j] = color_current
-        #print(self.f_grad_total)
-        #print(self.ftotal - self.f_total)
+        return f_total,f_grad_total
                
                     
                     
@@ -136,7 +120,7 @@ class ICNN_plot():
     def cal_fhat(self):
         for i in range(self.nq1):
             for j in range(self.nq2):
-                X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=device, dtype=dtype, requires_grad=True)
+                X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=self.device, dtype=dtype, requires_grad=True)
                 fh_current = self.model.fhat_forward(X)
                 self.fh_total[i,j,:] = fh_current
                 
@@ -144,7 +128,7 @@ class ICNN_plot():
     def cal_V(self):
         for i in range(self.nq1):
             for j in range(self.nq2):
-                X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=device, dtype=dtype, requires_grad=True)
+                X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=self.device, dtype=dtype, requires_grad=True)
                 V_current = self.model.V_forward(X, self.Xstable)
                 a = V_current.clone()
                 self.V_total[i,j] = a
@@ -169,12 +153,12 @@ class ICNN_plot():
         qlong = self.Xstable.to(device_c)*torch.ones(xlong.shape)
         xlong_valid = xlong[g>0]
         h = 0.0001
-        qvalid = self.inverse_kinematics_vec(xlong_valid).to(device)
+        qvalid = self.inverse_kinematics_vec(xlong_valid).to(self.device)
         qvalid.requires_grad=True
-        qvalidx = qvalid+torch.tensor([h,0],device=device)
-        qvalidx_ = qvalid+torch.tensor([-h,0],device=device)
-        qvalidy = qvalid+torch.tensor([0,h],device=device)
-        qvalidy_ = qvalid+torch.tensor([0,-h],device=device)
+        qvalidx = qvalid+torch.tensor([h,0],device=self.device)
+        qvalidx_ = qvalid+torch.tensor([-h,0],device=self.device)
+        qvalidy = qvalid+torch.tensor([0,h],device=self.device)
+        qvalidy_ = qvalid+torch.tensor([0,-h],device=self.device)
         #print(qvalid-qvalidx)
         
         
@@ -194,7 +178,7 @@ class ICNN_plot():
     
         f_task_valid = torch.zeros(qvalid.shape)
         f_task = torch.zeros(xlong.shape)
-        self.ftask = f_task.view(self.nx1,self.nx2,2).detach().numpy()
+        ftask = f_task.view(self.nx1,self.nx2,2).detach().numpy()
         temp1 = torch.zeros(qvalid.shape,dtype=dtype)
         temp2 = torch.zeros(qvalid.shape,dtype=dtype)
         #print(self.ftask)
@@ -213,19 +197,18 @@ class ICNN_plot():
             #print(x_dot)
         #x_dot = np.matmul(J,np.reshape(Vec_num,[2,1]))
         #print(temp1,temp2)
-        self.f_task_grad_valid = torch.sqrt((temp1**2)[:,0]+(temp1**2)[:,1]+(temp2**2)[:,0]+(temp2**2)[:,1])
-        self.f_task_grad = torch.zeros(qlong.shape[0],dtype=dtype)
-        self.f_task_grad[g>0] = self.f_task_grad_valid
-        self.f_task_grad= self.f_task_grad.view(self.nx1,self.nx2)
+        f_task_grad_valid = torch.sqrt((temp1**2)[:,0]+(temp1**2)[:,1]+(temp2**2)[:,0]+(temp2**2)[:,1])
+        f_task_grad = torch.zeros(qlong.shape[0],dtype=dtype)
+        f_task_grad[g>0] = f_task_grad_valid
+        f_task_grad= f_task_grad.view(self.nx1,self.nx2)
         f_task[g>0] = f_task_valid
-        #print(self.f_task_grad)
-        #print(self.ftask)
-        #print(f_task)
+        
+        return ftask,f_task_grad
         
                 
     def plot_f(self,filename, density, widthscale, widthbase, quiver = False, streamplot = True, cmax = 0):
 
-        self.cal_f()
+        f_total,f_grad_total = self.cal_f()
 
         pi = math.pi
         plt.rcParams["figure.figsize"] = (12.3,10)
@@ -233,20 +216,20 @@ class ICNN_plot():
         widths = 0.001
         #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
         plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
-        fnumpy = self.f_total.detach()
+        fnumpy = f_total.detach()
         U = fnumpy[:,:,0].t().numpy()
         V = fnumpy[:,:,1].t().numpy()
         
         #f streamline
         if(quiver):
-            plt.quiver(self.q1_mesh,self.q2_mesh,self.f_total[:,:,0].detach(),self.f_total[:,:,1].detach(),color = 'r',width=0.002)
+            plt.quiver(self.q1_mesh,self.q2_mesh,f_total[:,:,0].detach(),f_total[:,:,1].detach(),color = 'r',width=0.002)
         if(streamplot):
             #print(np.sqrt(U*U+V*V))
             #print(np.ones([self.nq1,self.nq2]))
             width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
             #width[width>10] = 10
             #print(width)
-            color = self.f_grad_total.detach().t().numpy()
+            color = f_grad_total.detach().t().numpy()
             #print(color)
             strm = plt.streamplot(self.q1_mesh.t().numpy(),self.q2_mesh.t().numpy(),fnumpy[:,:,0].t().numpy(),fnumpy[:,:,1].t().numpy(),
                            density = density,color = color,linewidth = width, cmap='autumn')
@@ -331,32 +314,12 @@ class ICNN_plot():
         plt.plot((robot.xinit.numpy()[0],robot.xfinal.numpy()[0]),(robot.xinit.numpy()[1],robot.xfinal.numpy()[1]),'g')
         plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
         
-        self.cal_ftask()
+        ftask,f_task_grad = self.cal_ftask()
         
-        U = self.ftask[:,:,0]
-        V = self.ftask[:,:,1]
-        #print(U,V)
-        
+        U = ftask[:,:,0]
+        V = ftask[:,:,1]
         
         
-        #for i in range(self.x1_mesh.shape[0]):
-        #    for j in range(self.x1_mesh.shape[1]):
-        #        x1 = self.x1_mesh[i,j]
-        #        x2 = self.x2_mesh[i,j]       
-        #        a = (robot.l1-robot.l2)**2 < x1**2 + x2**2
-        #        b = x1**2 + x2**2 < (robot.l1+robot.l2)**2
-        #        c = robot.l2**2 < (x1-robot.l1)**2+x2**2
-        #        d = (x1+robot.l1)**2 + x2**2 < robot.l2**2
-        #        e = x2 > 0
-#
-        #        if a.data.numpy()*b.data.numpy()*c.data.numpy()*(d.data.numpy()+e.data.numpy())>0:
-        #            Temp = robot.inverse_kinematics([x1,x2])
-        #            Vec = self.model.f_forward(torch.tensor([np.reshape(Temp,[2,])], device=device, dtype=dtype, requires_grad=True),self.Xstable)
-        #            Vec_num = Vec.data.cpu().numpy()
-        #            J = robot.get_jacobian(torch.tensor(np.reshape(Temp,[2,])))
-        #            x_dot = np.matmul(J,np.reshape(Vec_num,[2,1]))
-        #            U[i,j] = x_dot[0,:]
-        #            V[i,j] = x_dot[1,:]
                     
 
         if(quiver):
@@ -366,7 +329,7 @@ class ICNN_plot():
             width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
             #width[width>10] = 10
             #print(width)
-            color = self.f_task_grad.detach().t().numpy()
+            color = f_task_grad.detach().t().numpy()
             
             strm = plt.streamplot(self.x1_mesh.t().numpy(), self.x2_mesh.t().numpy(), np.transpose(U), np.transpose(V), density = density ,color =color,linewidth = width,
                                   cmap='autumn')

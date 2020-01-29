@@ -10,16 +10,16 @@ import torch.optim as optim
 import math
 
 dtype = torch.float
-device0 = torch.device("cpu")
+device_c = torch.device("cpu")
 device = torch.device("cuda:0")
 
 class robotarm:
-    def __init__(self, l1,l2,m1,m2):
+    def __init__(self, l1,l2,m1,m2,device=device):
         self.l1 = l1
         self.l2 = l2
         self.m1 = m1
         self.m2 = m2
-        
+        self.device = device
     def forward_kinematics(self, q):
         x = np.zeros(2)
         x[0] = self.l1*np.cos(q[0])+self.l2*np.cos(q[0]+q[1])
@@ -50,13 +50,14 @@ class robotarm:
     def get_Kinematic_Riemannian_metric(self, q):
         Kinematic_Riemannian_metric = torch.tensor([[0,0],[0,0]], dtype=torch.float32)
         Jacobian = self.get_jacobian(q)
-        Jacobian_transpose = torch.t(Jacobian)
-        Kinematic_Riemannian_metric = Jacobian_transpose*Jacobian
-        return Kinematic_Riemannian_metric
+        Jacobian_transpose = Jacobian.t()
+        Kinematic_Riemannian_metric = torch.mm(Jacobian_transpose,Jacobian)
+        Kinematic_Riemannian_metric = Kinematic_Riemannian_metric#+1.0e-03*torch.eye(2)
+        return Kinematic_Riemannian_metric 
 
     def get_Christoffel_kinematic(self, q):
         G = self.get_Kinematic_Riemannian_metric(q)
-        G_inv = torch.inverse(G)
+        G_inv = torch.inverse(G+1.0e-03*torch.eye(2))
         Gamma_1 = 0.5*G_inv.matmul(torch.tensor([[0, -2*self.l1*self.l2*torch.sin(q[1])],
                                                  [2*self.l1*self.l2*torch.sin(q[1]), 0]]))
         Gamma_2 = 0.5*G_inv.matmul(torch.tensor([[-2*self.l1*self.l2*torch.sin(q[1]), -2*self.l1*self.l2*torch.sin(q[1])],
@@ -75,7 +76,6 @@ class robotarm:
     def get_Christoffel_kinetic(self, q):
         G = self.get_Kinetic_Riemannian_metric(q)
         G_inv = torch.inverse(G)
-        print(self.m2)
         
         Gamma_1 = self.m2*0.5*G_inv.matmul(torch.tensor([[0, -2*self.l1*self.l2*torch.sin(q[1])],[2*self.l1*self.l2*torch.sin(q[1]), 0]]))
         Gamma_2 = self.m2*0.5*G_inv.matmul(torch.tensor([[-2*self.l1*self.l2*torch.sin(q[1]), -2*self.l1*self.l2*torch.sin(q[1])],[0, 0]]))
@@ -87,8 +87,8 @@ class robotarm:
         xinit2 = self.l1*torch.sin(qinit[0])+self.l2*torch.sin(qinit[0]+qinit[1])
         xfinal1 = self.l1*torch.cos(qfinal[0])+self.l2*torch.cos(qfinal[0]+qfinal[1])
         xfinal2 = self.l1*torch.sin(qfinal[0])+self.l2*torch.sin(qfinal[0]+qfinal[1])
-        xinit = torch.tensor([[xinit1],[xinit2]],device=device, dtype=dtype)
-        xfinal = torch.tensor([[xfinal1],[xfinal2]],device=device, dtype=dtype)
+        xinit = torch.tensor([[xinit1],[xinit2]],device=self.device, dtype=dtype)
+        xfinal = torch.tensor([[xfinal1],[xfinal2]],device=self.device, dtype=dtype)
         return xinit, xfinal
     
     def get_config_points(self, xinit,xfinal):
@@ -179,6 +179,48 @@ class robotarm:
             xtraj[1,i] = xinit[1]+dist_current*direction[1]
         
         return xtraj, x_dot
+    
+    def task_trajectory_complex(self, ctx, T, delta, num_timesteps):
+        #length = torch.dot(xfinal-xinit,xfinal-xinit)
+        #print(xinit.data[0,0])
+        #max_speed = 1
+        timesteps = torch.linspace(0,T,num_timesteps+1)
+        x_dot = torch.zeros(2,num_timesteps)
+        xtraj = torch.zeros(2,num_timesteps)
+        deltaT = delta*T
+        direction = (xfinal-xinit)/torch.norm((xfinal-xinit), 2)
+        max_speed = (torch.norm((xfinal-xinit), 2)/
+                     (T + -1/((1-delta)*(1-delta)*T*T*3)*(T-deltaT)*(T-deltaT)*(T-deltaT)))
+        
+        def V(t):
+            if t<=deltaT:
+                speed = max_speed
+            else:
+                speed = -(max_speed)/((1-delta)*(1-delta)*T*T)*(t-deltaT)*(t-deltaT) + max_speed
+            return speed
+        
+        def s(t):
+            if t<=deltaT:
+                distance = max_speed*t
+            else:
+                distance = (max_speed*t + -(max_speed)/((1-delta)*(1-delta)*T*T*3)*
+                            (t-deltaT)*(t-deltaT)*(t-deltaT))
+            return distance
+        
+        #print( direction)
+        for i in range(num_timesteps):
+            #print(i)
+            t = (timesteps[i]+timesteps[i+1])/2
+            vel_current = V(t)
+            dist_current = s(t)
+            x_dot[0,i] = vel_current*direction[0]
+            x_dot[1,i] = vel_current*direction[1]
+            #print(xtraj)
+            
+            xtraj[0,i] = xinit[0]+dist_current*direction[0]
+            xtraj[1,i] = xinit[1]+dist_current*direction[1]
+        
+        return xtraj, x_dot
         
         
     def config_trajectory(self, xtraj):
@@ -198,7 +240,7 @@ class robotarm:
             q2_current = torch.acos(C2)
             qtraj[:,i] = torch.tensor([q1_current, q2_current])
             #print(torch.cos(q2_current)-C2)
-            #qtraj = qtraj.t().to(device)
+            #qtraj = qtraj.t().to(self.device)
         return qtraj
     
     
@@ -220,7 +262,7 @@ class robotarm:
             q_dot_current = inv_J.matmul(x_dot_current)
             
             q_dot[:,i] = torch.t(q_dot_current)
-            #q_dot = q_dot.t().to(device)
+            #q_dot = q_dot.t().to(self.device)
         return q_dot
     
     def Initialize(self, xinit,xfinal,T,delta,num_timesteps):
@@ -239,7 +281,7 @@ class robotarm:
         qmax = [pi,pi]
         dt = T/num_timesteps
         qinit,qfinal = self.get_config_points(xinit,xfinal)
-        Xstable = qfinal.clone().to(device)        
+        Xstable = qfinal.clone().to(self.device)        
         [xtraj,x_dot] = self.task_trajectory(xinit, xfinal, T, delta, num_timesteps)
         qtraj = self.config_trajectory(xtraj)
         q_dot = self.config_velocity(qtraj,x_dot)
