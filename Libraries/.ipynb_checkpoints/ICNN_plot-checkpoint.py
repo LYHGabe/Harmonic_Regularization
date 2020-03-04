@@ -16,7 +16,7 @@ device_c = torch.device("cpu")
 device = torch.device("cuda:0")
 
 class ICNN_plot():
-    def __init__(self, model,qmin,qmax,nq1,nq2,xmin,xmax,nx1,nx2,Xstable,qtraj,l1,l2,device):
+    def __init__(self, model,qmin,qmax,nq1,nq2,xmin,xmax,nx1,nx2,Xstable,qtraj,xtraj,l1,l2,device):
         #이병호 추가: 플롯 가로세로 한것들
         self.device = device
         self.fswitch = 1
@@ -28,6 +28,7 @@ class ICNN_plot():
         self.nx1 = nx1
         self.nx2 = nx2
         ##
+        self.xtraj = xtraj
         self.qtraj = qtraj
         self.q1_0 = (qmax[0]-qmin[0])/(2*nq1)+qmin[0]
         self.q2_0 = (qmax[1]-qmin[1])/(2*nq2)+qmin[1]
@@ -53,7 +54,7 @@ class ICNN_plot():
         #self.f_total = torch.zeros((nq2, nq1,2), device=device_c, dtype=dtype)
         #self.f_grad_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
         self.fh_total = torch.zeros((nq2, nq1,2), device=device_c, dtype=dtype)
-        self.V_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
+        #self.V_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
         #self.Vgrad_total = torch.zeros((nq2, nq1,2), device=device_c, dtype=dtype)
         self.model = model
         
@@ -118,6 +119,23 @@ class ICNN_plot():
         
     
     def cal_fhat(self):
+        
+        
+        Xlong = self.qmesh.view(-1,2).to(self.device)
+        Xlong.requires_grad=True
+        fhtotal_long = self.model.fhatf_forward(Xlong, self.Xstable)
+        fh_total = fhtotal_long.view(self.nq1,self.nq2,2).to(device_c).detach()
+        co1 = torch.sum(fhtotal_long[:,0])
+        co2 = torch.sum(fhtotal_long[:,1])
+        qdot_grad1 = grad(co1,Xlong,create_graph=True,retain_graph=True)[0]
+        qdot_grad2 = grad(co2,Xlong,create_graph=True,retain_graph=True)[0]
+        qdot_grad_norm1 = torch.sqrt((qdot_grad1**2)[:,0]+(qdot_grad1**2)[:,1]+(qdot_grad2**2)[:,0]+(qdot_grad2**2)[:,1])
+        fh_grad_total = qdot_grad_norm1.view(self.nq1,self.nq2).to(device_c).detach()
+        
+        return fg_total,fg_grad_total
+        
+        
+        
         for i in range(self.nq1):
             for j in range(self.nq2):
                 X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=self.device, dtype=dtype, requires_grad=True)
@@ -126,12 +144,17 @@ class ICNN_plot():
                 
                 
     def cal_V(self):
-        for i in range(self.nq1):
-            for j in range(self.nq2):
-                X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=self.device, dtype=dtype, requires_grad=True)
-                V_current = self.model.V_forward(X, self.Xstable)
-                a = V_current.clone()
-                self.V_total[i,j] = a
+        #V_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
+        Xlong = self.qmesh.view(-1,2).to(self.device)
+        Xlong.requires_grad=True
+        V_long = self.model.fh_forward(Xlong, self.Xstable)
+        V_total = V_long.view(self.nq1,self.nq2).to(device_c).detach()
+        #for i in range(self.nq1):
+        #    for j in range(self.nq2):
+        #        X = torch.tensor(([[self.q1[i],self.q2[j]]]), device=self.device, dtype=dtype, requires_grad=True)
+        #        V_current = self.model.V_forward(X, self.Xstable)
+        #        a = V_current.clone()
+        #        V_total[i,j] = a
                 
     def cal_ftask(self):
         xlong = self.xmesh.view(-1,2).to(device_c)
@@ -215,6 +238,8 @@ class ICNN_plot():
         plt.axis([0, pi, 0, pi])
         widths = 0.001
         #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
+        plt.plot(self.qtraj[0,0].numpy(),self.qtraj[1,0].numpy(),'cs',markersize=15)
+        plt.plot(self.qtraj[0,-1].numpy(),self.qtraj[1,-1].numpy(),'bo',markersize=15)
         plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
         fnumpy = f_total.detach()
         U = fnumpy[:,:,0].t().numpy()
@@ -269,16 +294,18 @@ class ICNN_plot():
         
     def plot_V(self, filename,num_level):
         pi = math.pi
-        self.cal_V()
+        V_total = self.cal_V()
             
         
         plt.rcParams["figure.figsize"] = (12.3,10)
         plt.axis([0, pi, 0, pi])
         widths = 0.001
         #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
+        plt.plot(self.qtraj[0,0].numpy(),self.qtraj[1,0].numpy(),'cs',markersize=15)
+        plt.plot(self.qtraj[0,-1].numpy(),self.qtraj[1,-1].numpy(),'bo',markersize=15)
         plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
         
-        Z = self.V_total.detach()
+        Z = V_total.detach()
         plt.contour(self.q1_mesh,self.q2_mesh,Z,
                    levels = np.linspace(Z.reshape(-1, 1).min(), Z.reshape(-1, 1).max(), num_level))
 
@@ -311,7 +338,10 @@ class ICNN_plot():
         graphs_axis_length1 = 10*axis_lengths[0]/max_length + 0.23*graphs_axis_length2
         #print(graphs_axis_length1,graphs_axis_length2)
         plt.rcParams["figure.figsize"] = (graphs_axis_length1,graphs_axis_length2)
-        plt.plot((robot.xinit.numpy()[0],robot.xfinal.numpy()[0]),(robot.xinit.numpy()[1],robot.xfinal.numpy()[1]),'g')
+        plt.plot(self.xtraj[0,0].numpy(),self.xtraj[1,0].numpy(),'cs',markersize=15)
+        plt.plot(self.xtraj[0,-1].numpy(),self.xtraj[1,-1].numpy(),'bo',markersize=15)
+        plt.plot(self.xtraj[0,:].numpy(),self.xtraj[1,:].numpy(),'g')
+        #plt.plot((robot.xinit.numpy()[0],robot.xfinal.numpy()[0]),(robot.xinit.numpy()[1],robot.xfinal.numpy()[1]),'g')
         plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
         
         ftask,f_task_grad = self.cal_ftask()
@@ -336,7 +366,50 @@ class ICNN_plot():
             plt.colorbar(strm.lines)
             if(cmax):
                 plt.clim(0,cmax)
-                
-        plt.show()
+        
         plt.savefig(filename,dpi = 500)
-       
+        plt.show()
+    
+    def plot_q_traj(self,filename, density, widthscale, widthbase, quiver = False, streamplot = True, cmax = 0):
+
+        pi = math.pi
+        plt.rcParams["figure.figsize"] = (12.3,10)
+        plt.axis([0, pi, 0, pi])
+        widths = 0.001
+        plt.plot(self.qtraj[0,0].numpy(),self.qtraj[1,0].numpy(),'cs',markersize=15)
+        plt.plot(self.qtraj[0,-1].numpy(),self.qtraj[1,-1].numpy(),'bo',markersize=15)
+        plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
+        plt.savefig(filename,dpi = 500)    
+        
+    def plot_task_traj(self,filename, robot, density, widthscale, widthbase, quiver = False, streamplot = True, cmax = 0):
+
+        l1 = robot.l1
+        l2 = robot.l2
+        theta = np.linspace(0,math.pi,num = 100)
+        x_r1 = (l1-l2)*np.cos(theta)
+        y_r1 = (l1-l2)*np.sin(theta)
+        x_r2 = (l1+l2)*np.cos(theta)
+        y_r2 = (l1+l2)*np.sin(theta)
+        if (l1-l2)>0:
+            plt.plot(x_r1,y_r1,'--b')
+        plt.plot(x_r2,y_r2,'--b')
+        x_r3 = -(l1)+l2*np.cos(theta+math.pi)
+        y_r3 = l2*np.sin(theta+math.pi)
+        x_r4 = (l1)+l2*np.cos(theta)
+        y_r4 = l2*np.sin(theta)
+        plt.plot(x_r3,y_r3,'--b')
+        plt.plot(x_r4,y_r4,'--b')
+        #이병호 추가: 플롯 가로세로
+        axis_lengths=  [(self.xmax[0]-self.xmin[0]),(self.xmax[1]-self.xmin[1])]
+        max_length  = max(axis_lengths)
+        graphs_axis_length2 = 10*axis_lengths[1]/max_length
+        graphs_axis_length1 = 10*axis_lengths[0]/max_length #+ 0.23*graphs_axis_length2
+        #print(graphs_axis_length1,graphs_axis_length2)
+        plt.rcParams["figure.figsize"] = (graphs_axis_length1,graphs_axis_length2)
+        plt.plot(self.xtraj[0,0].numpy(),self.xtraj[1,0].numpy(),'cs',markersize=15)
+        plt.plot(self.xtraj[0,-1].numpy(),self.xtraj[1,-1].numpy(),'bo',markersize=15)
+        plt.plot(self.xtraj[0,:].numpy(),self.xtraj[1,:].numpy(),'g')
+        #plt.plot((robot.xinit.numpy()[0],robot.xfinal.numpy()[0]),(robot.xinit.numpy()[1],robot.xfinal.numpy()[1]),'g')
+        plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
+        plt.savefig(filename,dpi = 500)
+        plt.show()

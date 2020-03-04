@@ -70,15 +70,19 @@ class ICNN_net(nn.Module):
         self.Vl1 = nn.Linear(self.V_inputSize,V_hidden_sizes[0],bias=False).to(self.device)
         #torch.nn.init.xavier_normal_(self.Vl1.weight)
         self.Vl2 = Weightsum_ICNN(V_hidden_sizes[0],V_hidden_sizes[1]).to(self.device)
-        #self.Vl3 = Weightsum_ICNN(V_hidden_sizes[1],V_hidden_sizes[2]).to(self.device)
-        #self.Vl4 = Weightsum_ICNN(V_hidden_sizes[2],V_hidden_sizes[3]).to(self.device)
+        self.Vl3 = Weightsum_ICNN(V_hidden_sizes[1],V_hidden_sizes[2]).to(self.device)
+        self.Vl4 = Weightsum_ICNN(V_hidden_sizes[2],V_hidden_sizes[3]).to(self.device)
         self.Vlf = Weightsum_ICNN(V_hidden_sizes[-1],self.V_outputSize).to(self.device)
         
         self.fhatl1 = nn.Linear(self.fhat_inputSize,fhat_hidden_sizes[0],bias=True).to(self.device)
         self.fhatl2 = nn.Linear(fhat_hidden_sizes[0],fhat_hidden_sizes[1],bias=True).to(self.device)
         self.fhatl3 = nn.Linear(fhat_hidden_sizes[1],fhat_hidden_sizes[2],bias=True).to(self.device)
-        #self.fhatl4 = nn.Linear(fhat_hidden_sizes[2],fhat_hidden_sizes[3],bias=True).to(self.device)
-        #self.fhatl5 = nn.Linear(fhat_hidden_sizes[3],fhat_hidden_sizes[4],bias=True).to(self.device)
+        self.fhatl4 = nn.Linear(fhat_hidden_sizes[2],fhat_hidden_sizes[3],bias=True).to(self.device)
+        self.fhatl5 = nn.Linear(fhat_hidden_sizes[3],fhat_hidden_sizes[4],bias=True).to(self.device)
+        #self.fhatl6 = nn.Linear(fhat_hidden_sizes[4],fhat_hidden_sizes[3],bias=True).to(self.device)
+        #self.fhatl7 = nn.Linear(fhat_hidden_sizes[5],fhat_hidden_sizes[4],bias=True).to(self.device)
+        #self.fhatl8 = nn.Linear(fhat_hidden_sizes[6],fhat_hidden_sizes[3],bias=True).to(self.device)
+        #self.fhatl9 = nn.Linear(fhat_hidden_sizes[7],fhat_hidden_sizes[4],bias=True).to(self.device)
         self.fhatlf = nn.Linear(fhat_hidden_sizes[-1],self.fhat_outputSize,bias=True).to(self.device)
         #torch.nn.init.xavier_normal_(self.fhatl1.weight)
         #torch.nn.init.xavier_normal_(self.fhatl2.weight)
@@ -93,11 +97,11 @@ class ICNN_net(nn.Module):
         V_z1 = self.Smooth_ReLU(V_z1_pre)
         V_z2_pre = self.Vl2(X-Xstable,V_z1)
         V_z2 = self.Smooth_ReLU(V_z2_pre)
-        #V_z3_pre = self.Vl3(X-Xstable,V_z2)
-        #V_z3 = self.Smooth_ReLU(V_z3_pre)
-        #V_z4_pre = self.Vl4(X-Xstable,V_z3)
-        #V_z4 = self.Smooth_ReLU(V_z4_pre)
-        V_zf_pre = self.Vlf(X-Xstable,V_z2)
+        V_z3_pre = self.Vl3(X-Xstable,V_z2)
+        V_z3 = self.Smooth_ReLU(V_z3_pre)
+        V_z4_pre = self.Vl4(X-Xstable,V_z3)
+        V_z4 = self.Smooth_ReLU(V_z4_pre)
+        V_zf_pre = self.Vlf(X-Xstable,V_z4)
         V_zf = self.Smooth_ReLU(V_zf_pre)
         
         Vsum_pre = self.tol*((X-Xstable) ** 2)
@@ -115,11 +119,19 @@ class ICNN_net(nn.Module):
         fhat_z2 = self.Smooth_ReLU(fhat_z2_pre)
         fhat_z3_pre = self.fhatl3(fhat_z2)
         fhat_z3 = self.Smooth_ReLU(fhat_z3_pre)
-        #fhat_z4_pre = self.fhatl4(fhat_z3)
-        #fhat_z4 = self.Smooth_ReLU(fhat_z4_pre)
-        #fhat_z5_pre = self.fhatl5(fhat_z4)
-        #fhat_z5 = self.Smooth_ReLU(fhat_z5_pre)
-        fhat_zf = self.fhatlf(fhat_z3)
+        fhat_z4_pre = self.fhatl4(fhat_z3)
+        fhat_z4 = self.Smooth_ReLU(fhat_z4_pre)
+        fhat_z5_pre = self.fhatl5(fhat_z4)
+        fhat_z5 = self.Smooth_ReLU(fhat_z5_pre)
+        #fhat_z6_pre = self.fhatl5(fhat_z5)
+        #fhat_z6 = self.Smooth_ReLU(fhat_z6_pre)
+        #fhat_z7_pre = self.fhatl5(fhat_z6)
+        #fhat_z7 = self.Smooth_ReLU(fhat_z7_pre)
+        #fhat_z8_pre = self.fhatl5(fhat_z7)
+        #fhat_z8 = self.Smooth_ReLU(fhat_z8_pre)
+        #fhat_z9_pre = self.fhatl5(fhat_z8)
+        #fhat_z9 = self.Smooth_ReLU(fhat_z9_pre)
+        fhat_zf = self.fhatlf(fhat_z5)
         
         fhat = fhat_zf
         
@@ -142,6 +154,7 @@ class ICNN_net(nn.Module):
         eps = 1.0e-10
         f_mul = F.relu((fh_V_mul+self.alpha*V))/(Vnorm+eps)
         f = f_hat - gradV*f_mul
+        #f = f_hat
         
         
         return f
