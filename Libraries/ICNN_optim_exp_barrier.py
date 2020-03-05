@@ -37,10 +37,10 @@ class Grid_dataset(Dataset):
     
 class ICNN_optim:
     
-    def __init__(self,V_hidden_sizes, fhat_hidden_sizes,tol,alpha,Xstable,device):
+    def __init__(self,V_hidden_sizes, fhat_hidden_sizes,tol,alpha,Xstable,device,slope = 0.01):
         super(ICNN_optim, self).__init__()
         self.device = device
-        self.model = ICNN_net.ICNN_net( V_hidden_sizes, fhat_hidden_sizes,tol,alpha,self.device)
+        self.model = ICNN_net.ICNN_net( V_hidden_sizes, fhat_hidden_sizes,tol,alpha,self.device,slope = slope)
         self.Xstable = Xstable
         self.expmul = 2
     def get_grid(self,nq1,nq2,qmin,qmax):
@@ -347,21 +347,41 @@ class ICNN_optim:
                 current_grid_data.grad.zero_()
                 ld = loss.data.clone().to(device_c)
                 #loss_mat[t] = loss.data
+                #del loss
+                #del co1
+                #del co2
+                #del qdot_grad1
+                #del qdot_grad2
+                #del current_output
+                #del current_grid_data
+                #del qdot_grad_norm
+                
+                
                 if i%10==0:
                     total_grid = q_in_reg.to(self.device)
                     total_grid.requires_grad=True
                     current_output = self.model.f_forward(total_grid,self.Xstable).to(self.device)
-
+                
                     co1 = torch.sum(current_output[:,0])
                     co2 = torch.sum(current_output[:,1])
-
-                    qdot_grad1 = grad(co1,total_grid,create_graph=True,retain_graph=True)[0]
-                    qdot_grad2 = grad(co2,total_grid,create_graph=True,retain_graph=True)[0]
-
+                
+                    qdot_grad1 = grad(co1,total_grid,retain_graph=True)[0]
+                    qdot_grad2 = grad(co2,total_grid,retain_graph=True)[0]
+                    
                     qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
                     total_loss_reg = torch.sum(qdot_grad_norm)*self.dA/2
-                    total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
+                    total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.to(device_c)
+                    total_loss_reg = total_loss_reg.data.to(device_c)
                     
+                    #del co1
+                    #del co2
+                    #del qdot_grad1
+                    #del qdot_grad2
+                    #del current_output
+                    #del total_grid
+                    #del qdot_grad_norm
+                #total_loss = ld.data
+                #total_loss_reg = loss_reg.data
                 print ('\r epoch = '+str(t) +' i = '+str(i+1)+ 
                        ', loss = ' +str(ld.data.numpy())+
                        ', total_loss = ' +str(total_loss.data.numpy())+

@@ -42,8 +42,10 @@ class Weightsum_ICNN(nn.Module):
         super(Weightsum_ICNN, self).__init__()
         self.icnnx = nn.Linear(2, output_dim, bias=False)    
         self.icnnz = nn.Linear(input_dim, output_dim, bias=False)        
-        #torch.nn.init.xavier_normal_(self.icnnx.weight)     
-        #torch.nn.init.xavier_normal_(self.icnnz.weight)
+        torch.nn.init.xavier_normal_(self.icnnx.weight)     
+        torch.nn.init.xavier_normal_(self.icnnz.weight)
+        #torch.nn.init.uniform_(self.icnnx.weight, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.icnnx.weight, a=0.0, b=1.0)
     def forward(self, X, z):
         
         out = self.icnnx(X) + self.icnnz(z)
@@ -53,7 +55,7 @@ class Weightsum_ICNN(nn.Module):
     
 class ICNN_net(nn.Module):
     
-    def __init__(self, V_hidden_sizes, fhat_hidden_sizes, tol, alpha,device):
+    def __init__(self, V_hidden_sizes, fhat_hidden_sizes, tol, alpha,device, slope = 0.01):
         super(ICNN_net, self).__init__()
         self.V_inputSize = 2
         self.V_outputSize = 1
@@ -61,7 +63,8 @@ class ICNN_net(nn.Module):
         self.fhat_outputSize = 2
         
         self.ReLU = nn.ReLU()
-        self.Smooth_ReLU = Smooth_ReLU.apply
+        self.Smooth_ReLU = nn.ReLU()#Smooth_ReLU.apply
+        self.fhat_activation = nn.LeakyReLU(negative_slope = slope)
         self.Sigmoid = nn.Sigmoid()
         self.tol = tol
         self.alpha = alpha
@@ -84,12 +87,27 @@ class ICNN_net(nn.Module):
         #self.fhatl8 = nn.Linear(fhat_hidden_sizes[6],fhat_hidden_sizes[3],bias=True).to(self.device)
         #self.fhatl9 = nn.Linear(fhat_hidden_sizes[7],fhat_hidden_sizes[4],bias=True).to(self.device)
         self.fhatlf = nn.Linear(fhat_hidden_sizes[-1],self.fhat_outputSize,bias=True).to(self.device)
-        #torch.nn.init.xavier_normal_(self.fhatl1.weight)
-        #torch.nn.init.xavier_normal_(self.fhatl2.weight)
-        #torch.nn.init.xavier_normal_(self.fhatl3.weight)
-        #torch.nn.init.xavier_normal_(self.fhatl4.weight)
-        #torch.nn.init.xavier_normal_(self.fhatl5.weight)
-        #torch.nn.init.xavier_normal_(self.fhatlf.weight)
+        #torch.nn.init.uniform_(self.fhatl1, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl2, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl3, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl4, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl5, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl6, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl7, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl8, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatl9, a=0.0, b=1.0)
+        #torch.nn.init.uniform_(self.fhatlf, a=0.0, b=1.0)
+        
+        torch.nn.init.xavier_normal_(self.fhatl1.weight)
+        torch.nn.init.xavier_normal_(self.fhatl2.weight)
+        torch.nn.init.xavier_normal_(self.fhatl3.weight)
+        torch.nn.init.xavier_normal_(self.fhatl4.weight)
+        torch.nn.init.xavier_normal_(self.fhatl5.weight)
+        #torch.nn.init.xavier_normal_(self.fhatl6.weight)
+        #torch.nn.init.xavier_normal_(self.fhatl7.weight)
+        #torch.nn.init.xavier_normal_(self.fhatl8.weight)
+        #torch.nn.init.xavier_normal_(self.fhatl9.weight)
+        torch.nn.init.xavier_normal_(self.fhatlf.weight)
         
     def V_forward(self, X, Xstable):
         
@@ -114,23 +132,23 @@ class ICNN_net(nn.Module):
     
     def fhat_forward(self, X):
         fhat_z1_pre = self.fhatl1(X)
-        fhat_z1 = self.Smooth_ReLU(fhat_z1_pre)
+        fhat_z1 = self.fhat_activation(fhat_z1_pre)
         fhat_z2_pre = self.fhatl2(fhat_z1)
-        fhat_z2 = self.Smooth_ReLU(fhat_z2_pre)
+        fhat_z2 = self.fhat_activation(fhat_z2_pre)
         fhat_z3_pre = self.fhatl3(fhat_z2)
-        fhat_z3 = self.Smooth_ReLU(fhat_z3_pre)
+        fhat_z3 = self.fhat_activation(fhat_z3_pre)
         fhat_z4_pre = self.fhatl4(fhat_z3)
-        fhat_z4 = self.Smooth_ReLU(fhat_z4_pre)
+        fhat_z4 = self.fhat_activation(fhat_z4_pre)
         fhat_z5_pre = self.fhatl5(fhat_z4)
-        fhat_z5 = self.Smooth_ReLU(fhat_z5_pre)
+        fhat_z5 = self.fhat_activation(fhat_z5_pre)
         #fhat_z6_pre = self.fhatl5(fhat_z5)
-        #fhat_z6 = self.Smooth_ReLU(fhat_z6_pre)
+        #fhat_z6 = self.fhat_activation(fhat_z6_pre)
         #fhat_z7_pre = self.fhatl5(fhat_z6)
-        #fhat_z7 = self.Smooth_ReLU(fhat_z7_pre)
+        #fhat_z7 = self.fhat_activation(fhat_z7_pre)
         #fhat_z8_pre = self.fhatl5(fhat_z7)
-        #fhat_z8 = self.Smooth_ReLU(fhat_z8_pre)
+        #fhat_z8 = self.fhat_activation(fhat_z8_pre)
         #fhat_z9_pre = self.fhatl5(fhat_z8)
-        #fhat_z9 = self.Smooth_ReLU(fhat_z9_pre)
+        #fhat_z9 = self.fhat_activation(fhat_z9_pre)
         fhat_zf = self.fhatlf(fhat_z5)
         
         fhat = fhat_zf
