@@ -43,6 +43,9 @@ class ICNN_optim:
         self.model = ICNN_net.ICNN_net( V_hidden_sizes, fhat_hidden_sizes,tol,alpha,self.device,slope = slope)
         self.Xstable = Xstable
         self.expmul = 2
+        self.n_totalgrid = 10
+        
+        
     def get_grid(self,nq1,nq2,qmin,qmax):
         self.nq1 = nq1
         self.nq2 = nq2
@@ -401,7 +404,7 @@ class ICNN_optim:
         
         
         
-        q_in_small,aa,bb = self.get_grid(10,10,self.qmin,self.qmax)
+        q_in_small,aa,bb = self.get_grid(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
         q_in_small = q_in_small.to(self.device)
         q_in_small.requires_grad = True
         
@@ -499,8 +502,8 @@ class ICNN_optim:
                     current_output = current_output.t()
                     co1 = torch.sum(current_output[:,0])
                     co2 = torch.sum(current_output[:,1])
-                    qdot_grad1 = grad(co1,total_grid,create_graph=True,retain_graph=True)[0]
-                    qdot_grad2 = grad(co2,total_grid,create_graph=True,retain_graph=True)[0]
+                    qdot_grad1 = grad(co1,total_grid,retain_graph=True)[0]
+                    qdot_grad2 = grad(co2,total_grid,retain_graph=True)[0]
                     qdot_grad_together = torch.zeros(2,2,total_grid.shape[0]).to(self.device)
                     qdot_grad_together[:,0,:] = qdot_grad1.t()
                     qdot_grad_together[:,1,:] = qdot_grad2.t()
@@ -529,7 +532,7 @@ class ICNN_optim:
                     cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                     #print(cov_der)
                     Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
-                    total_loss_reg = Integral_approximation*self.dA/2
+                    total_loss_reg = Integral_approximation*self.dA/2*(self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1)
                     total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                 
                 
@@ -550,9 +553,10 @@ class ICNN_optim:
     def optim_Kinetic_reg(self, robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
                       batch_size = 400):
         
-        q_in_small,aa,bb = self.get_grid(10,10,self.qmin,self.qmax)
+        q_in_small,aa,bb = self.get_grid(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
         q_in_small = q_in_small.to(self.device)
         q_in_small.requires_grad = True
+        
         
         dataset = Grid_dataset(q_in_reg.numpy())
         train_loader = DataLoader(dataset=dataset,
@@ -676,7 +680,7 @@ class ICNN_optim:
                     cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                     #print(cov_der)
                     Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
-                    total_loss_reg = Integral_approximation*self.dA/2
+                    total_loss_reg = Integral_approximation*self.dA/2/((self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1))
                     total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                     
                     

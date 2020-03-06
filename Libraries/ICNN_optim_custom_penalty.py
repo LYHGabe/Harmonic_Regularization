@@ -45,7 +45,18 @@ class ICNN_optim:
         self.expmul = 2
         self.n_totalgrid = 10
         
-        
+       
+    def penalty_fun(self,loss,mode = 0):
+        eps = 0.01
+        if mode==0:
+            return torch.exp(self.expmul*F.relu(loss-eps))
+        if mode==1:
+            return F.relu(loss-eps)**2
+    
+    
+    
+    
+    
     def get_grid(self,nq1,nq2,qmin,qmax):
         self.nq1 = nq1
         self.nq2 = nq2
@@ -278,7 +289,7 @@ class ICNN_optim:
                     
         
     def optim_Euc_reg(self,q_in_reg,qtraj ,q_dot,dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, learning_rate = 1e-2,epoch=10000,
-                      batch_size = 400):
+                      batch_size = 400,penalty_mode = 0):
         
         dataset = Grid_dataset(q_in_reg.numpy())
         train_loader = DataLoader(dataset=dataset,
@@ -339,7 +350,7 @@ class ICNN_optim:
                 
                 #penalty = 10000                             ##########################################################################
                 eps = 0.01
-                loss = loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)
+                loss = loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 
                 #print(loss)
                 loss.backward(retain_graph=True)
@@ -373,7 +384,7 @@ class ICNN_optim:
                     
                     qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
                     total_loss_reg = torch.sum(qdot_grad_norm)*self.dA/2
-                    total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.to(device_c)
+                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.to(device_c)
                     total_loss_reg = total_loss_reg.data.to(device_c)
                     
                     #del co1
@@ -483,7 +494,7 @@ class ICNN_optim:
                 loss_task = dt*loss_fn(qdot_pred,qdot_real).to(self.device)
                 #penalty = 10000                             ##########################################################################
                 eps = 0.01
-                loss = loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)
+                loss = loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 loss.backward(retain_graph=True)
                 optimizer.step()
                 q_in.grad.zero_()
@@ -533,7 +544,7 @@ class ICNN_optim:
                     #print(cov_der)
                     Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
                     total_loss_reg = Integral_approximation*self.dA/2*(self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1)
-                    total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
+                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                 
                 
                 
@@ -634,7 +645,7 @@ class ICNN_optim:
                 loss_task = dt*loss_fn(qdot_pred,qdot_real).to(self.device)
                 penalty = 10000                             ##########################################################################
                 eps = 0.01
-                loss = loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)
+                loss = loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 #print(loss)
                 loss.backward(retain_graph=True)
                 optimizer.step()
@@ -681,7 +692,7 @@ class ICNN_optim:
                     #print(cov_der)
                     Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
                     total_loss_reg = Integral_approximation*self.dA/2/((self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1))
-                    total_loss = (total_loss_reg+penalty*(torch.exp(self.expmul*F.relu(loss_task-eps)))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
+                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                     
                     
                     
