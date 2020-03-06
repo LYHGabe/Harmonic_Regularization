@@ -46,12 +46,14 @@ class ICNN_optim:
         self.n_totalgrid = 10
         
        
-    def penalty_fun(self,loss,mode = 0):
-        eps = 0.01
+    def penalty_fun(self,loss,eps,epoch,mode = 0):
         if mode==0:
             return torch.exp(self.expmul*F.relu(loss-eps))
         if mode==1:
             return F.relu(loss-eps)**2
+        if mode==2:
+            t= 2
+            return -1/t*torch.log(-(loss-eps))
     
     
     
@@ -349,8 +351,8 @@ class ICNN_optim:
                 
                 
                 #penalty = 10000                             ##########################################################################
-                eps = 0.01
-                loss = loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
+                eps = 0.1
+                loss = loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 
                 #print(loss)
                 loss.backward(retain_graph=True)
@@ -384,7 +386,7 @@ class ICNN_optim:
                     
                     qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
                     total_loss_reg = torch.sum(qdot_grad_norm)*self.dA/2
-                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.to(device_c)
+                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.to(device_c)
                     total_loss_reg = total_loss_reg.data.to(device_c)
                     
                     #del co1
@@ -470,7 +472,7 @@ class ICNN_optim:
                 Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
                 Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                 Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-
+                Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                 for k in range(num_sampled_batch):
                     Temp1 = robot.get_Christoffel_kinematic(current_grid_data[k,:])
                     Temp2 = robot.get_Kinematic_Riemannian_metric(current_grid_data[k,:])
@@ -483,8 +485,9 @@ class ICNN_optim:
                     Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
                     Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                     Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
+                    Matrix_G_inv[2*k:2*(k+1),2*k:2*(k+1)] = torch.inverse(Temp2)
                 ######################################
-                Matrix_G_inv = torch.inverse(Matrix_G)
+                
                 cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                 #print(cov_der)
                 Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
@@ -493,8 +496,8 @@ class ICNN_optim:
                 qdot_pred = self.model.f_forward(q_in,Xstable).to(self.device)
                 loss_task = dt*loss_fn(qdot_pred,qdot_real).to(self.device)
                 #penalty = 10000                             ##########################################################################
-                eps = 0.01
-                loss = loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
+                eps = 0.1
+                loss = loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 loss.backward(retain_graph=True)
                 optimizer.step()
                 q_in.grad.zero_()
@@ -526,7 +529,7 @@ class ICNN_optim:
                     Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
                     Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                     Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-
+                    Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                     for k in range(num_sampled_batch):
                         Temp1 = robot.get_Christoffel_kinematic(total_grid[k,:])
                         Temp2 = robot.get_Kinematic_Riemannian_metric(total_grid[k,:])
@@ -539,13 +542,13 @@ class ICNN_optim:
                         Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
                         Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                         Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
+                        Matrix_G_inv[2*k:2*(k+1),2*k:2*(k+1)] = torch.inverse(Temp2)
                     ######################################
-                    Matrix_G_inv = torch.inverse(Matrix_G)
                     cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                     #print(cov_der)
                     Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
                     total_loss_reg = Integral_approximation*self.dA/2*(self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1)
-                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
+                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                 
                 
                 
@@ -622,6 +625,7 @@ class ICNN_optim:
                 Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
                 Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                 Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
+                Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
 
                 for k in range(num_sampled_batch):
                     Temp1 = robot.get_Christoffel_kinetic(current_grid_data[k,:])
@@ -635,8 +639,8 @@ class ICNN_optim:
                     Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
                     Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                     Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
+                    Matrix_G_inv[2*k:2*(k+1),2*k:2*(k+1)] = torch.inverse(Temp2)
                 ######################################
-                Matrix_G_inv = torch.inverse(Matrix_G)
                 cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                 Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
 
@@ -646,8 +650,8 @@ class ICNN_optim:
                 qdot_pred = self.model.f_forward(q_in,Xstable).to(self.device)
                 loss_task = dt*loss_fn(qdot_pred,qdot_real).to(self.device)
                 penalty = 10000                             ##########################################################################
-                eps = 0.01
-                loss = loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
+                eps = 0.1
+                loss = loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 #print(loss)
                 loss.backward(retain_graph=True)
                 optimizer.step()
@@ -676,6 +680,7 @@ class ICNN_optim:
                     Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
                     Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                     Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
+                    Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                     
                     for k in range(num_sampled_batch):
                         Temp1 = robot.get_Christoffel_kinetic(total_grid[k,:])
@@ -689,13 +694,13 @@ class ICNN_optim:
                         Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
                         Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                         Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
+                        Matrix_G_inv[2*k:2*(k+1),2*k:2*(k+1)] = torch.inverse(Temp2)
                     ######################################
-                    Matrix_G_inv = torch.inverse(Matrix_G)
                     cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                     #print(cov_der)
                     Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
                     total_loss_reg = Integral_approximation*self.dA/2*(self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1)
-                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
+                    total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                     
                     
                     
