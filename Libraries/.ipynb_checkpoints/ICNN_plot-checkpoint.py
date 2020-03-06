@@ -370,7 +370,7 @@ class ICNN_plot():
         plt.savefig(filename,dpi = 500)
         plt.show()
     
-    def plot_q_traj(self,filename, density, widthscale, widthbase, quiver = False, streamplot = True, cmax = 0):
+    def plot_q_traj(self,filename):
 
         pi = math.pi
         plt.rcParams["figure.figsize"] = (12.3,10)
@@ -413,3 +413,54 @@ class ICNN_plot():
         plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
         plt.savefig(filename,dpi = 500)
         plt.show()
+        
+    def plot_robot_taskspace(self,filename, robot,theta1,theta2, traj=False):
+
+        l1 = robot.l1
+        l2 = robot.l2
+        m1 = robot.m1
+        m2 = robot.m2
+        theta = np.linspace(0,math.pi,num = 100)
+        x_r1 = (l1-l2)*np.cos(theta)
+        y_r1 = (l1-l2)*np.sin(theta)
+        x_r2 = (l1+l2)*np.cos(theta)
+        y_r2 = (l1+l2)*np.sin(theta)
+        if (l1-l2)>0:
+            plt.plot(x_r1,y_r1,'--b')
+        plt.plot(x_r2,y_r2,'--b')
+        x_r3 = -(l1)+l2*np.cos(theta+math.pi)
+        y_r3 = l2*np.sin(theta+math.pi)
+        x_r4 = (l1)+l2*np.cos(theta)
+        y_r4 = l2*np.sin(theta)
+        plt.plot(x_r3,y_r3,'--b')
+        plt.plot(x_r4,y_r4,'--b')
+        #이병호 추가: 플롯 가로세로
+        axis_lengths=  [(self.xmax[0]-self.xmin[0]),(self.xmax[1]-self.xmin[1])]
+        max_length  = max(axis_lengths)
+        graphs_axis_length2 = 10*axis_lengths[1]/max_length
+        graphs_axis_length1 = 10*axis_lengths[0]/max_length #+ 0.23*graphs_axis_length2
+        plt.rcParams["figure.figsize"] = (graphs_axis_length1,graphs_axis_length2)
+        if traj == True:
+            plt.plot(self.xtraj[0,0].numpy(),self.xtraj[1,0].numpy(),'cs',markersize=15)
+            plt.plot(self.xtraj[0,-1].numpy(),self.xtraj[1,-1].numpy(),'bo',markersize=15)
+            plt.plot(self.xtraj[0,:].numpy(),self.xtraj[1,:].numpy(),'g')
+        plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
+
+        
+        thickness = 10
+        linkcolor = [0.8,0.4,0.1]
+        joincolor = [0.8,0.1,0.2]
+        base = plt.Rectangle((-0.1*(l1+l2), -0.1*(l1+l2)), 0.2*(l1+l2), 0.1*(l1+l2), fill=True, facecolor=joincolor, edgecolor=joincolor, linewidth=2.5)
+        plt.plot(0,0,'bo',color=joincolor,markersize=30)
+        plt.plot([0,l1*np.cos(theta1)],[0,l1*np.sin(theta1)],linewidth=thickness,color=linkcolor)
+        plt.plot(l1*np.cos(theta1),l1*np.sin(theta1),'bo',color='k',markersize=5*m1)
+        plt.plot([l1*np.cos(theta1),l1*np.cos(theta1)+l2*np.cos(theta1+theta2)],[l1*np.sin(theta1),l1*np.sin(theta1)+l2*np.sin(theta1+theta2)]
+                 ,linewidth=thickness,color=linkcolor)
+
+        plt.plot([l1*np.cos(theta1)+l2*np.cos(theta1+theta2),l1*np.cos(theta1)+(l2*(1+m2*0.01))*np.cos(theta1+theta2)],
+                 [l1*np.sin(theta1)+l2*np.sin(theta1+theta2),l1*np.sin(theta1)+(l2*(1+m2*0.01))*np.sin(theta1+theta2)],color='k',linewidth=m2*0.5*thickness)
+        
+
+        plt.gca().add_patch(base)
+        plt.plot(0,0,'bo',color=[0.2,0.2,0.2],markersize=7)
+        plt.plot(l1*np.cos(theta1),l1*np.sin(theta1),'bo',color=[0.2,0.2,0.2],markersize=7)

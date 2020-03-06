@@ -411,7 +411,7 @@ class ICNN_optim:
         
         
     def optim_Kinematic_reg(self, robot, q_in_reg, qtraj, q_dot, dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
-                      batch_size = 400):
+                      batch_size = 400,penalty_mode = 0):
         
         
         
@@ -540,9 +540,10 @@ class ICNN_optim:
                         Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                         Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
                     ######################################
+                    Matrix_G_inv = torch.inverse(Matrix_G)
                     cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                     #print(cov_der)
-                    Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
+                    Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
                     total_loss_reg = Integral_approximation*self.dA/2*(self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1)
                     total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                 
@@ -562,7 +563,7 @@ class ICNN_optim:
                 
         
     def optim_Kinetic_reg(self, robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
-                      batch_size = 400):
+                      batch_size = 400,penalty_mode = 0):
         
         q_in_small,aa,bb = self.get_grid(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
         q_in_small = q_in_small.to(self.device)
@@ -635,8 +636,9 @@ class ICNN_optim:
                     Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                     Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
                 ######################################
+                Matrix_G_inv = torch.inverse(Matrix_G)
                 cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
-                Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
+                Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
 
                 loss_reg = Integral_approximation*self.dA/2*(self.nq1*self.nq2/batch_size)
 
@@ -688,10 +690,11 @@ class ICNN_optim:
                         Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
                         Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
                     ######################################
+                    Matrix_G_inv = torch.inverse(Matrix_G)
                     cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
                     #print(cov_der)
-                    Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_det_G))
-                    total_loss_reg = Integral_approximation*self.dA/2/((self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1))
+                    Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
+                    total_loss_reg = Integral_approximation*self.dA/2*(self.nq1-1)/(self.n_totalgrid-1)*(self.nq2-1)/(self.n_totalgrid-1)
                     total_loss = (total_loss_reg+penalty*(self.penalty_fun(loss_task,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)).data.clone().to(device_c)
                     
                     
