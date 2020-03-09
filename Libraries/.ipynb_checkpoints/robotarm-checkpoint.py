@@ -250,7 +250,7 @@ class robotarm:
         #print(rmin,rmax)
         return rmin,rmax,qmin,qmax,dt,qinit,qfinal,Xstable,xtraj,x_dot,qtraj,q_dot
 
-    def Initialize_spline(self, xpoints,ypoints, T, delta, num_timesteps):
+    def Initialize_spline(self, xpoints,ypoints,Vpoints, T, delta, num_timesteps):
         pi = math.pi
         ## aded by YH LEE
         self.qinit = torch.tensor([xpoints[0],ypoints[0]],dtype=dtype)
@@ -264,10 +264,132 @@ class robotarm:
         qmin = [0,0]
         qmax = [pi,pi]
         dt = T/num_timesteps
-        qtraj,q_dot,xtraj= self.spline_traj(xpoints,ypoints, T, delta, num_timesteps)
+        qtraj,q_dot,xtraj= self.spline_traj_0309(xpoints,ypoints,Vpoints, T, delta, num_timesteps)
         #qinit,qfinal = self.get_config_points(self.xinit,self.xfinal)
         Xstable = self.qfinal.clone().to(self.device)
         return rmin,rmax,qmin,qmax,dt,self.qinit,self.qfinal,Xstable,xtraj,qtraj,q_dot
+    
+    def spline_traj_0309(self,xpoints,ypoints,Vpoints, T, delta, num_timesteps):
+        af = 10
+        deltaT = delta*T
+        aa = np.linspace(0,af,xpoints.shape[0])
+        tt = np.linspace(0,deltaT,Vpoints.shape[0])
+        #a_total = np.linspace(0,af,100)
+        tck1 = interpolate.splrep(aa, xpoints)
+        tck2 = interpolate.splrep(aa, ypoints)
+        tckV = interpolate.splrep(tt, Vpoints)
+        
+        t_total = np.linspace(0,T,num_timesteps+1)
+        timesteps = (t_total[:-1]+t_total[1:])/2
+        
+        
+        #####1. total length calculation
+        def splfun(a):
+            x = interpolate.splev(a,tck1)
+            y = interpolate.splev(a,tck2)
+            return x,y
+        def splder(a):
+            dx = interpolate.splev(a,tck1,der=1)
+            dy = interpolate.splev(a,tck2,der=1)
+            return dx,dy
+        def lenfun(a):
+            dx,dy = splder(a)
+            dl = np.sqrt(dx**2+dy**2)
+            return dl
+        def len_int(a):
+            length = integrate.quad(lenfun,0,a)[0]
+            return length
+        
+        total_length = len_int(af)
+        
+        ####2. max_speed calculation
+        #max_speed = (total_length/
+        #             (T + -1/((1-delta)*(1-delta)*T*T*3)*(T-deltaT)*(T-deltaT)*(T-deltaT)))
+        
+        def V(t):
+            #speed = np.zeros(t.shape)
+            
+            #speed[t<=deltaT] = interpolate.splev(t[t<=deltaT],tck1)
+            if t<=deltaT:
+                speed = interpolate.splev(t,tckV)
+            #c = Vpoints[-1]/((T-deltaT)**2)
+            #speed[t>deltaT] = -c*(t[t>deltaT]-deltaT)+Vpoints[-1]
+            else:
+                #slope = interpolate.splev(deltaT,tck1,der=1)
+                c = Vpoints[-1]/((T-deltaT)**2)
+                speed = -c*((t-deltaT)**2)+Vpoints[-1]
+            return speed
+        
+        def l(t):
+            #distance = np.zeros(t.shape)
+            #for i in range(t.shape):
+            #    distance(i)
+            distance = integrate.quad(V,0,t)[0]
+            #distance = np.zeros(t.shape)
+            #distance[t<=deltaT] = max_speed*t[t<=deltaT]
+            #distance[t>deltaT] = (max_speed*t[t>deltaT] + -(max_speed)/((1-delta)*(1-delta)*T*T*3)*
+            #                      (t[t>deltaT]-deltaT)*(t[t>deltaT]-deltaT)*(t[t>deltaT]-deltaT))
+            return distance
+        lt_final = l(T)
+        V_mul = total_length/lt_final
+        def V2(t):
+            speed = V_mul*V(t)
+            return speed
+        def V2mat(t):
+            speed = np.zeros(t.shape)
+            
+            speed[t<=deltaT] = interpolate.splev(t[t<=deltaT],tckV)
+            c = Vpoints[-1]/((T-deltaT)**2)
+            speed[t>deltaT] = -c*((t[t>deltaT]-deltaT)**2)+Vpoints[-1]
+            return V_mul*speed#V_mul*V(t)
+        def l2(t):
+            distance = integrate.quad(V2,0,t)[0]
+            return distance
+        #print(timesteps)
+        #print(V2mat(timesteps))
+        #print(V2(T))
+        
+        #### 3. matching t vs x,y
+        def xy_at_t(t):
+            #3-1. t vs l(t)
+            lt = l2(t)
+            #print(V2(t))
+            #print(lt)
+            #3-2. l(t) vs a
+            def len_res(a): 
+                return len_int(a)-lt
+            a = fsolve(len_res,(t*af/T))
+            x,y = splfun(a)
+            return a,x,y
+        
+        xx = np.zeros([num_timesteps])
+        yy = np.zeros([num_timesteps])
+        aa = np.zeros([num_timesteps])
+        for i in range(num_timesteps):
+            #print(timesteps[i])
+            aa[i], xx[i],yy[i] = xy_at_t(timesteps[i])
+            
+        #### 4. asigning speed to the spline
+        dx,dy = splder(aa)
+        dx_normalized = dx/np.sqrt(dx**2+dy**2)
+        dy_normalized = dy/np.sqrt(dx**2+dy**2)
+        dx_f = dx_normalized*V2mat(timesteps)
+        dy_f = dy_normalized*V2mat(timesteps)
+        
+        
+        #### 5. xtraj and x_dot
+        qtraj = torch.zeros(2,num_timesteps)
+        q_dot = torch.zeros(2,num_timesteps)
+        
+        
+        
+        qtraj[0,:] = torch.from_numpy(xx)
+        qtraj[1,:] = torch.from_numpy(yy)
+        q_dot[0,:] = torch.from_numpy(dx_f)
+        q_dot[1,:] = torch.from_numpy(dy_f)
+        xtraj = self.qtraj_to_xtraj(qtraj)
+        
+        return qtraj,q_dot,xtraj
     
     def spline_traj(self,xpoints,ypoints, T, delta, num_timesteps):
         af = 10
@@ -438,55 +560,4 @@ class robotarm:
         
         return xtraj,x_dot
         
-        
-        def plot_robot_taskspace(self,filename, robot,theta1,theta2, traj=False):
-
-            l1 = robot.l1
-            l2 = robot.l2
-            m1 = robot.m1
-            m2 = robot.m2
-            theta = np.linspace(0,math.pi,num = 100)
-            x_r1 = (l1-l2)*np.cos(theta)
-            y_r1 = (l1-l2)*np.sin(theta)
-            x_r2 = (l1+l2)*np.cos(theta)
-            y_r2 = (l1+l2)*np.sin(theta)
-            if (l1-l2)>0:
-                plt.plot(x_r1,y_r1,'--b')
-            plt.plot(x_r2,y_r2,'--b')
-            x_r3 = -(l1)+l2*np.cos(theta+math.pi)
-            y_r3 = l2*np.sin(theta+math.pi)
-            x_r4 = (l1)+l2*np.cos(theta)
-            y_r4 = l2*np.sin(theta)
-            plt.plot(x_r3,y_r3,'--b')
-            plt.plot(x_r4,y_r4,'--b')
-            #이병호 추가: 플롯 가로세로
-            axis_lengths=  [(self.xmax[0]-self.xmin[0]),(self.xmax[1]-self.xmin[1])]
-            max_length  = max(axis_lengths)
-            graphs_axis_length2 = 10*axis_lengths[1]/max_length
-            graphs_axis_length1 = 10*axis_lengths[0]/max_length #+ 0.23*graphs_axis_length2
-            plt.rcParams["figure.figsize"] = (graphs_axis_length1,graphs_axis_length2)
-            if traj == True:
-                plt.plot(self.xtraj[0,0].numpy(),self.xtraj[1,0].numpy(),'cs',markersize=15)
-                plt.plot(self.xtraj[0,-1].numpy(),self.xtraj[1,-1].numpy(),'bo',markersize=15)
-                plt.plot(self.xtraj[0,:].numpy(),self.xtraj[1,:].numpy(),'g')
-            plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
-    
-            
-            thickness = 10
-            linkcolor = [0.8,0.4,0.1]
-            joincolor = [0.8,0.1,0.2]
-            base = plt.Rectangle((-0.1*(l1+l2), -0.1*(l1+l2)), 0.2*(l1+l2), 0.1*(l1+l2), fill=True, facecolor=joincolor, edgecolor=joincolor, linewidth=2.5)
-            plt.plot(0,0,'bo',color=joincolor,markersize=30)
-            plt.plot([0,l1*np.cos(theta1)],[0,l1*np.sin(theta1)],linewidth=thickness,color=linkcolor)
-            plt.plot(l1*np.cos(theta1),l1*np.sin(theta1),'bo',color='k',markersize=5*m1)
-            plt.plot([l1*np.cos(theta1),l1*np.cos(theta1)+l2*np.cos(theta1+theta2)],[l1*np.sin(theta1),l1*np.sin(theta1)+l2*np.sin(theta1+theta2)]
-                     ,linewidth=thickness,color=linkcolor)
-    
-            plt.plot([l1*np.cos(theta1)+l2*np.cos(theta1+theta2),l1*np.cos(theta1)+(l2*(1+m2*0.01))*np.cos(theta1+theta2)],
-                     [l1*np.sin(theta1)+l2*np.sin(theta1+theta2),l1*np.sin(theta1)+(l2*(1+m2*0.01))*np.sin(theta1+theta2)],color='k',linewidth=m2*0.5*thickness)
-            
-    
-            plt.gca().add_patch(base)
-            plt.plot(0,0,'bo',color=[0.2,0.2,0.2],markersize=7)
-            plt.plot(l1*np.cos(theta1),l1*np.sin(theta1),'bo',color=[0.2,0.2,0.2],markersize=7)
         
