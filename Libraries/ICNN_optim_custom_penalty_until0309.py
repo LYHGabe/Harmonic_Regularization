@@ -599,7 +599,7 @@ class ICNN_optim:
                 temp2_boundary = torch.sum(F.relu(-temp_boundary[:,0]-temp_boundary[:,1])/temp0_boundary)# -는 relu 쓰기위함
                 
                 loss_boundary = math.pi*4/(q_in_boundary.shape[0])*temp2_boundary 
-                penalty_boundary = 10000               #####################################
+                #penalty_boundary = 10000               #####################################
 
                 data0 = data[0]
                 data1 = data[1]
@@ -649,7 +649,7 @@ class ICNN_optim:
 
                 qdot_pred = self.model.f_forward(q_in,Xstable).to(self.device)
                 loss_task = dt*loss_fn(qdot_pred,qdot_real).to(self.device)
-                penalty = 10000                             ##########################################################################
+                #penalty = 10000                             ##########################################################################
                 eps = 0.1
                 loss = loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 #print(loss)
@@ -732,146 +732,6 @@ class ICNN_optim:
                 if t>10000:
                     if (loss_mat[t]-loss_mat[t-100])/loss_mat[t] < 0.00001:
                         print('Optimization finished')
-            
-        
-    def performance_metric(self,robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary, Xstable):
-        #1 trajectory ######################################################################
-        q_in = qtraj.t().to(self.device)
-        q_in.requires_grad=True
-        qdot_real = q_dot.t().to(self.device)
-        loss_fn = torch.nn.MSELoss(reduction='sum')
-        qdot_pred = self.model.f_forward(q_in,self.Xstable).to(self.device)
-        loss_traj = dt*loss_fn(qdot_pred,qdot_real).data.to(self.device)
-        
-        print("#1 done")
-        #2 boundary######################################################################
-        qdot_bound_pred = self.model.f_forward(q_in_boundary,self.Xstable).to(self.device)
-        temp0_boundary = torch.sqrt((qdot_bound_pred**2)[:,0]+(qdot_bound_pred**2)[:,1])
-        temp_boundary = torch.mul(q_dot_boundary,qdot_bound_pred)
-        temp2_boundary = torch.sum(F.relu(-temp_boundary[:,0]-temp_boundary[:,1])/temp0_boundary)# -는 relu 쓰기위함
-        loss_boundary = math.pi*4/(q_in_boundary.shape[0])*temp2_boundary 
-        
-        print("#2 done")
-        #3 Euclidean(alpha = 1)########################################################
-        total_grid = q_in_reg.to(self.device)
-        total_grid.requires_grad=True
-        current_output = self.model.f_forward(total_grid,self.Xstable).to(self.device)
-        
-        co1 = torch.sum(current_output[:,0])
-        co2 = torch.sum(current_output[:,1])
-        
-        qdot_grad1 = grad(co1,total_grid,retain_graph=True)[0]
-        qdot_grad2 = grad(co2,total_grid,retain_graph=True)[0]
-        
-        qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
-        loss_Euc = torch.sum(qdot_grad_norm)*self.dA/2
-        loss_Euc = loss_Euc.data.to(device_c)
-        print("#3 done")
-        #4 Kinematic(alpha = 0)#########################################################
-        loss_kinematic = 0
-        loss_kinetic = 0
-        batch_size = 40
-        epoch = 1
-        dataset = Grid_dataset(q_in_reg.numpy())
-        train_loader = DataLoader(dataset=dataset,
-                                          batch_size=batch_size,
-                                          shuffle=False,
-                                          num_workers=8)
-        for i, data in enumerate(train_loader):
-            data0 = data[0]
-            data1 = data[1]
-            current_grid_data = torch.zeros(data[0].shape[0],2, device=self.device, dtype=dtype)
-            current_grid_data[:,0]  = data[0][:,0].clone()
-            current_grid_data[:,1]  = data[1][:,0].clone()
-            current_grid_data.requires_grad=True
-
-            current_output = self.model.f_forward(current_grid_data,Xstable).to(self.device)
-            current_output = current_output.t()
-            co1 = torch.sum(current_output[:,0])
-            co2 = torch.sum(current_output[:,1])
-            qdot_grad1 = grad(co1,current_grid_data,create_graph=True,retain_graph=True)[0]
-            qdot_grad2 = grad(co2,current_grid_data,create_graph=True,retain_graph=True)[0]
-            qdot_grad_together = torch.zeros(2,2,current_grid_data.shape[0]).to(self.device)
-            qdot_grad_together[:,0,:] = qdot_grad1.t()
-            qdot_grad_together[:,1,:] = qdot_grad2.t()
-            
-            num_sampled_batch = current_grid_data.shape[0]
-            Matrix_del_f = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_Gamma = torch.zeros(2*num_sampled_batch,2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
-            Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            for k in range(num_sampled_batch):
-                Temp1 = robot.get_Christoffel_kinematic(current_grid_data[k,:])
-                Temp2 = robot.get_Kinematic_Riemannian_metric(current_grid_data[k,:])
-
-                Matrix_del_f[2*k:2*(k+1),2*k:2*(k+1)] = qdot_grad_together[:,:,k]
-                Gamma = torch.zeros(2,2,2)
-                Gamma[:,:,0] = Temp1[0].detach().to(self.device)
-                Gamma[:,:,1] = Temp1[1].detach().to(self.device)
-                Matrix_Gamma[2*k:2*(k+1),2*k:2*(k+1),2*k:2*(k+1)] = Gamma
-                Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
-                Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
-                Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
-                Matrix_G_inv[2*k:2*(k+1),2*k:2*(k+1)] = torch.inverse(Temp2)
-            cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
-            Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
-            loss_kinematic_current = Integral_approximation*self.dA/2
-            loss_kinematic += loss_kinematic_current.data
-        print("#4 done")
-
-                
-        #5 Kinetic #########################################################
-        loss_kinetic = 0
-        for i, data in enumerate(train_loader):
-            data0 = data[0]
-            data1 = data[1]
-            current_grid_data = torch.zeros(data[0].shape[0],2, device=self.device, dtype=dtype)
-            current_grid_data[:,0]  = data[0][:,0].clone()
-            current_grid_data[:,1]  = data[1][:,0].clone()
-            current_grid_data.requires_grad=True
-            current_output = self.model.f_forward(current_grid_data,Xstable).to(self.device)
-            current_output = current_output.t()
-            co1 = torch.sum(current_output[:,0])
-            co2 = torch.sum(current_output[:,1])
-            qdot_grad1 = grad(co1,current_grid_data,create_graph=True,retain_graph=True)[0]
-            qdot_grad2 = grad(co2,current_grid_data,create_graph=True,retain_graph=True)[0]
-            qdot_grad_together = torch.zeros(2,2,current_grid_data.shape[0]).to(self.device)
-            qdot_grad_together[:,0,:] = qdot_grad1.t()
-            qdot_grad_together[:,1,:] = qdot_grad2.t()
-
-            ####################################### 
-            num_sampled_batch = current_grid_data.shape[0]
-            Matrix_del_f = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_Gamma = torch.zeros(2*num_sampled_batch,2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_f = torch.zeros(2*num_sampled_batch,1).to(self.device)
-            Matrix_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-            Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
-
-            for k in range(num_sampled_batch):
-                Temp1 = robot.get_Christoffel_kinetic(current_grid_data[k,:])
-                Temp2 = robot.get_Kinetic_Riemannian_metric(current_grid_data[k,:])
-
-                Matrix_del_f[2*k:2*(k+1),2*k:2*(k+1)] = qdot_grad_together[:,:,k]
-                Gamma = torch.zeros(2,2,2)
-                Gamma[:,:,0] = Temp1[0].detach().to(self.device)
-                Gamma[:,:,1] = Temp1[1].detach().to(self.device)
-                Matrix_Gamma[2*k:2*(k+1),2*k:2*(k+1),2*k:2*(k+1)] = Gamma
-                Matrix_f[2*k:2*(k+1),:] = torch.reshape(current_output[:,k],[2,1])
-                Matrix_G[2*k:2*(k+1),2*k:2*(k+1)] = Temp2
-                Matrix_det_G[2*k:2*(k+1),2*k:2*(k+1)] = torch.sqrt(torch.det(Temp2))*torch.eye(2)
-                Matrix_G_inv[2*k:2*(k+1),2*k:2*(k+1)] = torch.inverse(Temp2)
-            ######################################
-            cov_der = Matrix_del_f+torch.tensordot(Matrix_Gamma,Matrix_f,dims=([2],[0])).reshape(2*num_sampled_batch,2*num_sampled_batch)
-            Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
-
-            loss_kinetic_current = Integral_approximation*self.dA/2
-            loss_kinetic += loss_kinetic_current.data
-        print("#5 done")
-        return loss_traj, loss_boundary, loss_Euc, loss_kinematic, loss_kinetic
-
         
         
     
