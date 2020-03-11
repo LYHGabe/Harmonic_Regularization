@@ -53,16 +53,17 @@ class robotarm:
         Jacobian[1,1] = self.l2*torch.cos(q[0]+q[1])
         return Jacobian
     
-    def get_Kinematic_Riemannian_metric(self, q):
+    def get_Kinematic_Riemannian_metric(self, q, alpha_kinematic):
         Kinematic_Riemannian_metric = torch.tensor([[0,0],[0,0]], dtype=torch.float32)
         Jacobian = self.get_jacobian(q)
         Jacobian_transpose = Jacobian.t()
         Kinematic_Riemannian_metric = torch.mm(Jacobian_transpose,Jacobian)
-        Kinematic_Riemannian_metric = Kinematic_Riemannian_metric+1.0e-02*torch.eye(2)
+        Kinematic_Riemannian_metric = ((1-alpha_kinematic)
+                                       *Kinematic_Riemannian_metric+alpha_kinematic*torch.eye(2))
         return Kinematic_Riemannian_metric 
 
-    def get_Christoffel_kinematic(self, q):
-        G = self.get_Kinematic_Riemannian_metric(q)
+    def get_Christoffel_kinematic(self, q, alpha_kinematic):
+        G = self.get_Kinematic_Riemannian_metric(q,alpha_kinematic)
         G_inv = torch.inverse(G)
         Gamma_1 = 0.5*G_inv.matmul(torch.tensor([[0, -2*self.l1*self.l2*torch.sin(q[1])],
                                                  [2*self.l1*self.l2*torch.sin(q[1]), 0]]))

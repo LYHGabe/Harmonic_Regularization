@@ -412,7 +412,7 @@ class ICNN_optim:
             
         
         
-    def optim_Kinematic_reg(self, robot, q_in_reg, qtraj, q_dot, dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
+    def optim_Kinematic_reg(self, robot, q_in_reg, qtraj, q_dot, dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable,alpha_kinematic, learning_rate = 1e-3, epoch=10000,
                       batch_size = 400,penalty_mode = 0):
         
         
@@ -474,8 +474,8 @@ class ICNN_optim:
                 Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                 Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                 for k in range(num_sampled_batch):
-                    Temp1 = robot.get_Christoffel_kinematic(current_grid_data[k,:])
-                    Temp2 = robot.get_Kinematic_Riemannian_metric(current_grid_data[k,:])
+                    Temp1 = robot.get_Christoffel_kinematic(current_grid_data[k,:],alpha_kinematic)
+                    Temp2 = robot.get_Kinematic_Riemannian_metric(current_grid_data[k,:],alpha_kinematic)
 
                     Matrix_del_f[2*k:2*(k+1),2*k:2*(k+1)] = qdot_grad_together[:,:,k]
                     Gamma = torch.zeros(2,2,2)
@@ -531,8 +531,8 @@ class ICNN_optim:
                     Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                     Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
                     for k in range(num_sampled_batch):
-                        Temp1 = robot.get_Christoffel_kinematic(total_grid[k,:])
-                        Temp2 = robot.get_Kinematic_Riemannian_metric(total_grid[k,:])
+                        Temp1 = robot.get_Christoffel_kinematic(total_grid[k,:],alpha_kinematic)
+                        Temp2 = robot.get_Kinematic_Riemannian_metric(total_grid[k,:],alpha_kinematic)
 
                         Matrix_del_f[2*k:2*(k+1),2*k:2*(k+1)] = qdot_grad_together[:,:,k]
                         Gamma = torch.zeros(2,2,2)
@@ -734,7 +734,7 @@ class ICNN_optim:
                         print('Optimization finished')
             
         
-    def performance_metric(self,robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary, Xstable):
+    def performance_metric(self,robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary, Xstable,alpha_kinematic):
         #1 trajectory ######################################################################
         q_in = qtraj.t().to(self.device)
         q_in.requires_grad=True
@@ -803,8 +803,8 @@ class ICNN_optim:
             Matrix_det_G = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
             Matrix_G_inv = torch.zeros(2*num_sampled_batch,2*num_sampled_batch).to(self.device)
             for k in range(num_sampled_batch):
-                Temp1 = robot.get_Christoffel_kinematic(current_grid_data[k,:])
-                Temp2 = robot.get_Kinematic_Riemannian_metric(current_grid_data[k,:])
+                Temp1 = robot.get_Christoffel_kinematic(current_grid_data[k,:],alpha_kinematic)
+                Temp2 = robot.get_Kinematic_Riemannian_metric(current_grid_data[k,:],alpha_kinematic)
 
                 Matrix_del_f[2*k:2*(k+1),2*k:2*(k+1)] = qdot_grad_together[:,:,k]
                 Gamma = torch.zeros(2,2,2)
