@@ -37,13 +37,14 @@ class Grid_dataset(Dataset):
     
 class ICNN_optim:
     
-    def __init__(self,V_hidden_sizes, fhat_hidden_sizes,tol,alpha,Xstable,device,slope = 0.01):
+    def __init__(self,V_hidden_sizes, fhat_hidden_sizes,tol,alpha,Xstable,device,T,slope = 0.01):
         super(ICNN_optim, self).__init__()
         self.device = device
         self.model = ICNN_net.ICNN_net( V_hidden_sizes, fhat_hidden_sizes,tol,alpha,self.device,slope = slope)
         self.Xstable = Xstable
         self.expmul = 2
         self.n_totalgrid = 10
+        self.T = T
         
        
     def penalty_fun(self,loss,eps,epoch,mode = 0):
@@ -78,6 +79,29 @@ class ICNN_optim:
         q_in_reg = q_in_mesh.view(-1,2).to(device_c)
         
         return q_in_reg,q1,q2
+    
+    
+    
+    def get_qsmall(self,nq1,nq2,qmin,qmax):
+        #self.nq1 = nq1
+        #self.nq2 = nq2
+        #self.qmin = qmin
+        #self.qmax = qmax
+        q_in_mesh = torch.zeros((nq1,nq2,2), device=self.device, dtype=dtype)
+        q1_0 = (qmax[0]-qmin[0])/(2*nq1)+qmin[0]
+        q2_0 = (qmax[1]-qmin[1])/(2*nq2)+qmin[1]
+        q1_f = qmax[0] - (qmax[0]-qmin[0])/(2*nq1)
+        q2_f = qmax[1] - (qmax[1]-qmin[1])/(2*nq2)
+        q1 = torch.linspace(q1_0,q1_f,nq1)
+        q2 = torch.linspace(q2_0,q2_f,nq2)
+        #self.dA = (q1[2]-q1[1])*(q2[2]-q2[1])
+        q1_mesh,q2_mesh = torch.meshgrid(q1,q2)
+        q_in_mesh[:,:,0] = q1_mesh
+        q_in_mesh[:,:,1] = q2_mesh
+        q_in_reg = q_in_mesh.view(-1,2).to(device_c)
+        
+        return q_in_reg
+    
     
     def get_boundary(self,nq1_b,nq2_b,qmin,qmax):
         self.nq1_b = nq1_b
@@ -290,6 +314,8 @@ class ICNN_optim:
                     break
                     
         
+    
+     
     def optim_Euc_reg(self,q_in_reg,qtraj ,q_dot,dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, learning_rate = 1e-2,epoch=10000,
                       batch_size = 400,penalty_mode = 0):
         
@@ -356,6 +382,12 @@ class ICNN_optim:
                 
                 #print(loss)
                 loss.backward(retain_graph=True)
+                max_grad_norm = 1
+                norm_type=2
+                if max_grad_norm > 0:
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(group['params'], max_grad_norm, norm_type)
+                
                 optimizer.step()
                 q_in.grad.zero_()
                 self.model.zero_grad()
@@ -409,7 +441,6 @@ class ICNN_optim:
                 if t>10000:
                     if (loss_mat[t]-loss_mat[t-300])/loss_mat[t] < 0.001:
                         print('Optimization finished')
-            
         
         
     def optim_Kinematic_reg(self, robot, q_in_reg, qtraj, q_dot, dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable,alpha_kinematic, learning_rate = 1e-3, epoch=10000,
@@ -417,7 +448,7 @@ class ICNN_optim:
         
         
         
-        q_in_small,aa,bb = self.get_grid(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
+        q_in_small = self.get_qsmall(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
         q_in_small = q_in_small.to(self.device)
         q_in_small.requires_grad = True
         
@@ -492,13 +523,20 @@ class ICNN_optim:
                 #print(cov_der)
                 Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
                 loss_reg = Integral_approximation*self.dA/2*(self.nq1*self.nq2/batch_size)
-
+                
                 qdot_pred = self.model.f_forward(q_in,Xstable).to(self.device)
                 loss_task = dt*loss_fn(qdot_pred,qdot_real).to(self.device)
                 #penalty = 10000                             ##########################################################################
                 eps = 0.1
                 loss = loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 loss.backward(retain_graph=True)
+                max_grad_norm = 1
+                norm_type=2
+            
+                if max_grad_norm > 0:
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(group['params'], max_grad_norm, norm_type)
+                        
                 optimizer.step()
                 q_in.grad.zero_()
                 self.model.zero_grad()
@@ -568,7 +606,7 @@ class ICNN_optim:
     def optim_Kinetic_reg(self, robot, q_in_reg, qtraj, q_dot,dt,q_in_boundary,q_dot_boundary,penalty,penalty_boundary, Xstable, learning_rate = 1e-3, epoch=10000,
                       batch_size = 400,penalty_mode = 0):
         
-        q_in_small,aa,bb = self.get_grid(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
+        q_in_small = self.get_qsmall(self.n_totalgrid,self.n_totalgrid,self.qmin,self.qmax)
         q_in_small = q_in_small.to(self.device)
         q_in_small.requires_grad = True
         
@@ -654,6 +692,14 @@ class ICNN_optim:
                 loss = loss_reg+penalty*(self.penalty_fun(loss_task,eps,epoch,mode = penalty_mode))+penalty_boundary*((loss_boundary)**2)
                 #print(loss)
                 loss.backward(retain_graph=True)
+                
+                max_grad_norm = 1
+                norm_type=2
+            
+                if max_grad_norm > 0:
+                    for group in optimizer.param_groups:
+                        torch.nn.utils.clip_grad_norm_(group['params'], max_grad_norm, norm_type)
+                        
                 optimizer.step()
                 q_in.grad.zero_()
                 self.model.zero_grad()
@@ -742,7 +788,7 @@ class ICNN_optim:
         loss_fn = torch.nn.MSELoss(reduction='sum')
         qdot_pred = self.model.f_forward(q_in,self.Xstable).to(self.device)
         loss_traj = dt*loss_fn(qdot_pred,qdot_real).data.to(self.device)
-        
+        loss_traj = loss_traj*(self.T**2)
         print("#1 done")
         #2 boundary######################################################################
         qdot_bound_pred = self.model.f_forward(q_in_boundary,self.Xstable).to(self.device)
@@ -751,6 +797,7 @@ class ICNN_optim:
         temp2_boundary = torch.sum(F.relu(-temp_boundary[:,0]-temp_boundary[:,1])/temp0_boundary)# -는 relu 쓰기위함
         loss_boundary = math.pi*4/(q_in_boundary.shape[0])*temp2_boundary 
         
+        loss_boundary = loss_boundary*(self.T**2)
         print("#2 done")
         #3 Euclidean(alpha = 1)########################################################
         total_grid = q_in_reg.to(self.device)
@@ -766,6 +813,7 @@ class ICNN_optim:
         qdot_grad_norm = qdot_grad1**2+qdot_grad2**2
         loss_Euc = torch.sum(qdot_grad_norm)*self.dA/2
         loss_Euc = loss_Euc.data.to(device_c)
+        loss_Euc = loss_Euc*(self.T**2)
         print("#3 done")
         #4 Kinematic(alpha = 0)#########################################################
         loss_kinematic = 0
@@ -819,6 +867,9 @@ class ICNN_optim:
             Integral_approximation = torch.trace(torch.mm(torch.mm(torch.mm(torch.mm(cov_der.t(),Matrix_G),cov_der),Matrix_G_inv),Matrix_det_G))
             loss_kinematic_current = Integral_approximation*self.dA/2
             loss_kinematic += loss_kinematic_current.data
+            print(Integral_approximation)
+        
+        loss_kinematic = loss_kinematic*(self.T**2)
         print("#4 done")
 
                 
@@ -870,6 +921,8 @@ class ICNN_optim:
             loss_kinetic_current = Integral_approximation*self.dA/2
             loss_kinetic += loss_kinetic_current.data
         print("#5 done")
+        
+        loss_kinetic = loss_kinetic*(self.T**2)
         return loss_traj, loss_boundary, loss_Euc, loss_kinematic, loss_kinetic
 
         
