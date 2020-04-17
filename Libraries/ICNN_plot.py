@@ -27,6 +27,8 @@ class ICNN_plot():
         self.xmax = xmax
         self.nx1 = nx1
         self.nx2 = nx2
+        self.qmin = qmin
+        self.qmax = qmax
         ##
         self.xtraj = xtraj
         self.qtraj = qtraj
@@ -142,12 +144,31 @@ class ICNN_plot():
                 fh_current = self.model.fhat_forward(X)
                 self.fh_total[i,j,:] = fh_current
                 
+    def h_2d(self, X):
+        theta = X[:,:2] 
+        #b = X[:,3:]
+        theta_squared = theta**2
+        theta_norm = theta_squared[:,0]+theta_squared[:,1]
+        theta_periodic10 =  (torch.sin(theta_norm)/theta_norm*theta[:,0]).view(-1,1)
+        theta_periodic11 =  (torch.sin(theta_norm)/theta_norm*theta[:,1]).view(-1,1)
+        #theta_periodic12 =  (torch.sin(theta_norm)/theta_norm*theta[:,2]).view(-1,1)
+        #theta_periodic1 = torch.cat((theta_periodic10,theta_periodic11,theta_periodic12),dim=1)
+        theta_periodic20 = ((1-torch.cos(theta_norm))/theta_norm*(theta[:,0]**2)).view(-1,1)
+        theta_periodic21 = ((1-torch.cos(theta_norm))/theta_norm*(theta[:,1]**2)).view(-1,1)
+        #theta_periodic22 = ((1-torch.cos(theta_norm))/theta_norm*(theta[:,2]**2)).view(-1,1)
+        #theta_periodic2 = torch.cat((theta_periodic20,theta_periodic21,theta_periodic22),dim=1)
+        theta_periodic= torch.cat((theta_periodic10,theta_periodic11,
+               theta_periodic20,theta_periodic21),dim=1)
+        #X_se3 = torch.cat((theta_periodic,b))
+        return theta_periodic                
                 
     def cal_V(self):
         #V_total = torch.zeros((nq2, nq1), device=device_c, dtype=dtype)
-        Xlong = self.qmesh.view(-1,2).to(self.device)
+        Xlong = self.qmesh.view(-1,2).to(self.device)+0.1
         Xlong.requires_grad=True
-        V_long = self.model.fh_forward(Xlong, self.Xstable)
+        XXlong = self.h_2d(Xlong)
+        Xstable_se3 = self.h_2d(self.Xstable.view(-1,2)).view(4)
+        V_long = self.model.V_forward(XXlong, Xstable_se3)
         V_total = V_long.view(self.nq1,self.nq2).to(device_c).detach()
         #for i in range(self.nq1):
         #    for j in range(self.nq2):
@@ -155,6 +176,9 @@ class ICNN_plot():
         #        V_current = self.model.V_forward(X, self.Xstable)
         #        a = V_current.clone()
         #        V_total[i,j] = a
+        print(Xlong[0,:],XXlong[0,:])
+        print(V_total)
+        return V_total
                 
     def cal_ftask(self):
         xlong = self.xmesh.view(-1,2).to(device_c)
@@ -235,7 +259,8 @@ class ICNN_plot():
 
         pi = math.pi
         plt.rcParams["figure.figsize"] = (12.3,10)
-        plt.axis([0, pi, 0, pi])
+        plt.axis([self.qmin[0],self.qmax[0],self.qmin[1],self.qmax[1]])
+        #plt.axis([0, pi, 0, pi])
         widths = 0.001
         #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
         plt.plot(self.qtraj[0,0].numpy(),self.qtraj[1,0].numpy(),'cs',markersize=15)
@@ -251,7 +276,8 @@ class ICNN_plot():
         if(streamplot):
             #print(np.sqrt(U*U+V*V))
             #print(np.ones([self.nq1,self.nq2]))
-            width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
+            #width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
+            width = 2
             #width[width>10] = 10
             #print(width)
             color = f_grad_total.detach().t().numpy()
@@ -264,6 +290,7 @@ class ICNN_plot():
             
 
         plt.savefig(filename,dpi = 500)
+        plt.show()
     
     
     
@@ -273,7 +300,8 @@ class ICNN_plot():
         pi = math.pi
         self.cal_fhat()
         plt.rcParams["figure.figsize"] = (12.3,10)
-        plt.axis([0, pi, 0, pi])
+        plt.axis([self.qmin[0],self.qmax[0],self.qmin[1],self.qmax[1]])
+        #plt.axis([0, pi, 0, pi])
         widths = 0.001
         #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
         plt.plot(self.qtraj[0,:].numpy(),self.qtraj[1,:].numpy(),'g') #trajectory
@@ -292,13 +320,17 @@ class ICNN_plot():
         
         plt.savefig(filename,dpi = 500)
         
+        plt.show()
+        
     def plot_V(self, filename,num_level):
         pi = math.pi
         V_total = self.cal_V()
             
         
         plt.rcParams["figure.figsize"] = (12.3,10)
-        plt.axis([0, pi, 0, pi])
+        plt.axis([self.qmin[0],self.qmax[0],self.qmin[1],self.qmax[1]])
+        
+        #plt.axis([0, pi, 0, pi])
         widths = 0.001
         #plt.quiver(qtraj[0,:],qtraj[1,:],q_dot[0,:],q_dot[1,:], width=widths)  #trajectory vector field
         plt.plot(self.qtraj[0,0].numpy(),self.qtraj[1,0].numpy(),'cs',markersize=15)
@@ -356,7 +388,8 @@ class ICNN_plot():
             plt.quiver(self.x1_mesh.numpy(), self.x2_mesh.numpy(), U, V,'r',width=0.003)
         if(streamplot):
             
-            width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
+            #width = np.sqrt(U*U+V*V)*widthscale+widthbase*np.ones(np.shape(U))
+            width = 2
             #width[width>10] = 10
             #print(width)
             color = f_task_grad.detach().t().numpy()
@@ -369,6 +402,7 @@ class ICNN_plot():
         
         plt.savefig(filename,dpi = 500)
         plt.show()
+        
     
     def plot_q_traj(self,filename):
 
@@ -464,3 +498,6 @@ class ICNN_plot():
         plt.gca().add_patch(base)
         plt.plot(0,0,'bo',color=[0.2,0.2,0.2],markersize=7)
         plt.plot(l1*np.cos(theta1),l1*np.sin(theta1),'bo',color=[0.2,0.2,0.2],markersize=7)
+        #plt.axis([-(l1+l2), (l1+l2), -l2, (l1+l2)])
+        plt.savefig(filename,dpi = 500)
+        plt.show()

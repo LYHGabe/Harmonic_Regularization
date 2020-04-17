@@ -262,7 +262,7 @@ class robotarm:
         ##
         rmin = max(0,self.l1-self.l2)
         rmax = self.l1+self.l2
-        qmin = [0,0]
+        qmin = [-pi,-pi]#[0,0]
         qmax = [pi,pi]
         dt = T/num_timesteps
         qtraj,q_dot,xtraj= self.spline_traj_0309(xpoints,ypoints,Vpoints, T, delta, num_timesteps)

@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, DataLoader
 import math
 from torch.autograd import grad
 from Libraries import robotarm
-from Libraries import ICNN_net
+from Libraries import ICNN_net_SE3 as ICNN_net
 from Libraries import ICNN_plot
 
 dtype = torch.float
